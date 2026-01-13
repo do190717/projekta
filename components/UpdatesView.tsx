@@ -505,7 +505,7 @@ export default function UpdatesView({
 
       {/* Updates List */}
       {filteredUpdates.length === 0 ? (
-        <EmptyState filterActive={hasActiveFilters} />
+        <EmptyState filterActive={hasActiveFilters !== ''} />
       ) : (
         <div style={{
           display: 'flex',

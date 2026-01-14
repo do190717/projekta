@@ -1,1237 +1,821 @@
 'use client'
 
-/**
- * ===========================================
- * דף פרויקט - Projekta v3.0
- * עיצוב מודרני עם Layout של 2 פאנלים
- * + מערכת קבצים היררכית (Miller Columns)
- * ===========================================
- */
-
-import { useEffect, useState, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import Toast from '../../Toast'
-import WhatsAppChat from '../../../components/WhatsAppChat'
-import { useIsMobile } from '@/hooks/useIsMobile'
-import { 
-  CATEGORIES, 
-  BUILDINGS, 
-  FLOORS, 
-  STAGES, 
-  TRADES, 
-  ROLES,
-  UPDATE_STATUSES,
-  WORK_TYPES,
-  getFileIcon as getFileIconHelper,
-  formatFileSize as formatFileSizeHelper,
-  detectCategory as detectCategoryHelper,
-  type UpdateStatusId,
-  type WorkTypeId,
-} from '@/lib/constants'
+import Sidebar from './components/Sidebar'
+import { UPDATE_STATUSES } from '@/lib/constants'
 
-// Import components
-import { modernStyles, SORT_MODES } from './components/styles/modernStyles'
-import FilesPanel from './components/files/FilesPanel'
-import MobileFilesPanel from './components/files/MobileFilesPanel'
+export default function ProjectDashboard() {
+  const params = useParams()
+  const router = useRouter()
+  const projectId = params.id as string
+  const supabase = createClient()
 
-
-// ===========================================
-// TYPES
-// ===========================================
-
-interface PanelSize {
-  updates: number
-  files: number
-}
-
-
-// ===========================================
-// HELPERS
-// ===========================================
-
-const detectCategory = (text: string) => detectCategoryHelper(text)
-const getFileIcon = (fileType: string) => getFileIconHelper(fileType)
-const formatFileSize = (bytes: number) => formatFileSizeHelper(bytes)
-
-const parseMultipleUpdates = (text: string) => {
-  const lines = text.split(/[\n]+|(?<=\.)\s+/).map(line => line.trim()).filter(line => line.length > 2)
-  if (lines.length === 0 && text.trim().length > 0) lines.push(text.trim())
-  return lines.map(line => ({ content: line, category: detectCategory(line), selected: true }))
-}
-
-const generateToken = () => Math.random().toString(36).substring(2) + Date.now().toString(36)
-const canPreview = (fileType: string) => ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileType?.toLowerCase())
-
-
-// ===========================================
-// SUB COMPONENTS
-// ===========================================
-
-// Status Badge Component
-function StatusBadge({ status, size = 'normal' }: { status: UpdateStatusId; size?: 'small' | 'normal' }) {
-  const info = UPDATE_STATUSES[status] || UPDATE_STATUSES.open
-  const padding = size === 'small' ? '3px 8px' : '4px 10px'
-  const fontSize = size === 'small' ? '10px' : '11px'
+  const [project, setProject] = useState<any>(null)
+  const [user, setUser] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState({
+    totalUpdates: 0,
+    openUpdates: 0,
+    teamMembers: 0,
+    filesCount: 0,
+  })
+  const [recentUpdates, setRecentUpdates] = useState<any[]>([])
+  const [recentFiles, setRecentFiles] = useState<any[]>([])
+  const [profiles, setProfiles] = useState<any>({})
+  const [comments, setComments] = useState<{ [key: string]: any[] }>({})
+  const [readStatuses, setReadStatuses] = useState<{ [key: string]: any[] }>({})
   
+  // סינון פעילות אחרונה
+  const [activityLimit, setActivityLimit] = useState(5)
+  const [activityTimeFilter, setActivityTimeFilter] = useState<'today' | '3days' | 'week' | 'all'>('all')
+
+  useEffect(() => {
+    loadDashboard()
+  }, [projectId])
+
+  async function loadDashboard() {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      setUser(currentUser)
+
+      const { data: projectData } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('id', projectId)
+        .single()
+      
+      setProject(projectData)
+
+      const { count: updatesCount } = await supabase
+        .from('updates')
+        .select('*', { count: 'exact', head: true })
+        .eq('project_id', projectId)
+
+      const { count: openCount } = await supabase
+        .from('updates')
+        .select('*', { count: 'exact', head: true })
+        .eq('project_id', projectId)
+        .in('status', ['open', 'in_review', 'in_progress'])
+
+      const { count: teamCount } = await supabase
+        .from('project_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('project_id', projectId)
+
+      const { count: filesCount } = await supabase
+        .from('project_files')
+        .select('*', { count: 'exact', head: true })
+        .eq('project_id', projectId)
+
+      setStats({
+        totalUpdates: updatesCount || 0,
+        openUpdates: openCount || 0,
+        teamMembers: (teamCount || 0) + 1,
+        filesCount: filesCount || 0,
+      })
+
+      // טען עדכונים אחרונים - 20 אחרונים (נסנן אותם בצד לקוח)
+      const { data: recentUpdatesData } = await supabase
+        .from('updates')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+        .limit(20)
+      
+      setRecentUpdates(recentUpdatesData || [])
+
+      // טען תגובות ו-read statuses לכל עדכון
+      if (recentUpdatesData && recentUpdatesData.length > 0) {
+        for (const update of recentUpdatesData) {
+          const { data: commentsData } = await supabase
+            .from('comments')
+            .select('*')
+            .eq('update_id', update.id)
+          
+          if (commentsData) {
+            setComments((prev: any) => ({ ...prev, [update.id]: commentsData }))
+            
+            // טען read statuses לתגובות
+            const commentIds = commentsData.map(c => c.id)
+            if (commentIds.length > 0 && currentUser) {
+              const { data: readData } = await supabase
+                .from('comment_reads')
+                .select('*')
+                .in('comment_id', commentIds)
+                .eq('user_id', currentUser.id)
+              
+              if (readData) {
+                setReadStatuses((prev: any) => ({ ...prev, [update.id]: readData }))
+              }
+            }
+          }
+        }
+      }
+
+      // טען קבצים אחרונים
+      const { data: recentFilesData } = await supabase
+        .from('project_files')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+        .limit(3)
+      
+      setRecentFiles(recentFilesData || [])
+
+      // טען profiles למשתמשים
+      if (recentUpdatesData && recentUpdatesData.length > 0) {
+        const userIds = recentUpdatesData.map(u => u.user_id).filter(Boolean)
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('id', userIds)
+        
+        if (profilesData) {
+          const profilesMap: any = {}
+          profilesData.forEach(p => { profilesMap[p.id] = p })
+          setProfiles(profilesMap)
+        }
+      }
+
+    } catch (error) {
+      console.error('Error loading dashboard:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function generateAlerts() {
+    const alerts = []
+    
+    if (stats.openUpdates > 5) {
+      alerts.push({
+        icon: '🔴',
+        message: `יש ${stats.openUpdates} עדכונים פתוחים הממתינים לטיפול`,
+        color: '#EF4444',
+        action: 'עבור לעדכונים',
+        onClick: () => router.push(`/projects/${projectId}/updates`)
+      })
+    }
+    
+    if (recentFiles.length > 0) {
+      const todayFiles = recentFiles.filter(f => {
+        const fileDate = new Date(f.created_at)
+        const today = new Date()
+        return fileDate.toDateString() === today.toDateString()
+      })
+      
+      if (todayFiles.length > 0) {
+        alerts.push({
+          icon: '📁',
+          message: `${todayFiles.length} קבצים חדשים הועלו היום`,
+          color: '#10B981',
+          action: 'צפה בקבצים',
+          onClick: () => router.push(`/projects/${projectId}/files`)
+        })
+      }
+    }
+    
+    if (recentUpdates.length > 0) {
+      const recentActivity = recentUpdates.filter(u => {
+        const updateDate = new Date(u.created_at)
+        const hourAgo = new Date(Date.now() - 60 * 60 * 1000)
+        return updateDate > hourAgo
+      })
+      
+      if (recentActivity.length > 0) {
+        alerts.push({
+          icon: '⚡',
+          message: `${recentActivity.length} עדכונים חדשים בשעה האחרונה`,
+          color: '#F59E0B',
+          action: 'ראה מה חדש',
+          onClick: () => router.push(`/projects/${projectId}/updates`)
+        })
+      }
+    }
+    
+    return alerts
+  }
+
+  // סינון עדכונים לפי זמן
+  function getFilteredUpdates() {
+    let filtered = [...recentUpdates]
+    
+    const now = new Date()
+    
+    if (activityTimeFilter === 'today') {
+      filtered = filtered.filter(u => {
+        const updateDate = new Date(u.created_at)
+        return updateDate.toDateString() === now.toDateString()
+      })
+    } else if (activityTimeFilter === '3days') {
+      const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000)
+      filtered = filtered.filter(u => new Date(u.created_at) > threeDaysAgo)
+    } else if (activityTimeFilter === 'week') {
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      filtered = filtered.filter(u => new Date(u.created_at) > weekAgo)
+    }
+    
+    return filtered.slice(0, activityLimit)
+  }
+
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        height: '100vh',
+        fontFamily: 'Heebo, sans-serif'
+      }}>
+        <p>טוען...</p>
+      </div>
+    )
+  }
+
+  if (!project) {
+    return <div>פרויקט לא נמצא</div>
+  }
+
+  const filteredUpdates = getFilteredUpdates()
+
   return (
-    <span style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '4px',
-      padding,
-      borderRadius: '6px',
-      fontSize,
-      fontWeight: 600,
-      backgroundColor: info.bgColor,
-      color: info.color,
-      fontFamily: 'Heebo, sans-serif',
-    }}>
-      <span>{info.icon}</span>
-      <span>{info.name}</span>
-    </span>
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <Sidebar projectName={project.name} />
+
+      <div style={{ 
+        marginRight: '260px',
+        flex: 1,
+        padding: '32px',
+        backgroundColor: '#f8fafc',
+        fontFamily: 'Heebo, sans-serif',
+        direction: 'rtl',
+        display: 'flex',
+        justifyContent: 'center',
+      }}>
+        <div style={{ 
+          width: '100%', 
+          maxWidth: '1200px'
+        }}>
+          
+          <div style={{ marginBottom: '32px' }}>
+            <h1 style={{ 
+              fontSize: '32px', 
+              fontWeight: '700', 
+              marginBottom: '8px',
+              color: '#1e293b',
+            }}>
+              👋 שלום!
+            </h1>
+            <p style={{ color: '#64748b', fontSize: '16px' }}>
+              ברוך הבא לדשבורד של {project.name}
+            </p>
+          </div>
+
+          {/* Stats Cards */}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '20px',
+            marginBottom: '32px'
+          }}>
+            <StatCard
+              icon="📋"
+              title="עדכונים"
+              value={stats.totalUpdates}
+              subtitle={`${stats.openUpdates} פתוחים`}
+              color="#3B82F6"
+              onClick={() => router.push(`/projects/${projectId}/updates`)}
+            />
+            <StatCard
+              icon="👥"
+              title="חברי צוות"
+              value={stats.teamMembers}
+              subtitle="אנשים בפרויקט"
+              color="#8B5CF6"
+            />
+            <StatCard
+              icon="📁"
+              title="קבצים"
+              value={stats.filesCount}
+              subtitle="מסמכים"
+              color="#10B981"
+              onClick={() => router.push(`/projects/${projectId}/files`)}
+            />
+            <StatCard
+              icon="💰"
+              title="תזרים"
+              value="בקרוב"
+              subtitle="ממתין לפיתוח"
+              color="#F59E0B"
+            />
+          </div>
+
+          {/* Quick Actions */}
+          <div style={{ 
+            padding: '28px',
+            backgroundColor: 'white',
+            borderRadius: '16px',
+            marginBottom: '32px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          }}>
+            <h3 style={{ 
+              fontSize: '18px', 
+              fontWeight: '600', 
+              marginBottom: '20px',
+              color: '#1e293b',
+            }}>
+              🔥 פעולות מהירות
+            </h3>
+            <div style={{ 
+              display: 'flex', 
+              gap: '12px',
+              flexWrap: 'wrap'
+            }}>
+              <QuickActionButton
+                label="➕ עדכון חדש"
+                onClick={() => router.push(`/projects/${projectId}/updates`)}
+              />
+              <QuickActionButton
+                label="📁 העלה קובץ"
+                onClick={() => router.push(`/projects/${projectId}/files`)}
+              />
+              <QuickActionButton
+                label="👥 נהל צוות"
+                onClick={() => router.push(`/projects/${projectId}/updates`)}
+              />
+            </div>
+          </div>
+
+          {/* Alerts Section */}
+          {generateAlerts().length > 0 && (
+            <div style={{ 
+              padding: '28px',
+              backgroundColor: 'white',
+              borderRadius: '16px',
+              marginBottom: '32px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            }}>
+              <h3 style={{ 
+                fontSize: '18px', 
+                fontWeight: '600', 
+                marginBottom: '20px',
+                color: '#1e293b',
+              }}>
+                📢 התראות חשובות
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {generateAlerts().map((alert, idx) => (
+                  <div key={idx} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    padding: '16px',
+                    backgroundColor: '#f8fafc',
+                    borderRadius: '12px',
+                    borderRight: `4px solid ${alert.color}`,
+                  }}>
+                    <span style={{ fontSize: '28px' }}>{alert.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <p style={{ 
+                        margin: 0, 
+                        fontSize: '14px', 
+                        color: '#1e293b',
+                        fontWeight: '500' 
+                      }}>
+                        {alert.message}
+                      </p>
+                    </div>
+                    <button
+                      onClick={alert.onClick}
+                      style={{
+                        padding: '8px 16px',
+                        backgroundColor: alert.color,
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        fontFamily: 'Heebo, sans-serif',
+                      }}
+                    >
+                      {alert.action}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recent Activity - UPGRADED */}
+          {recentUpdates.length > 0 && (
+            <div style={{ 
+              padding: '28px',
+              backgroundColor: 'white',
+              borderRadius: '16px',
+              marginBottom: '32px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            }}>
+              {/* Header with filters */}
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                marginBottom: '20px',
+                flexWrap: 'wrap',
+                gap: '12px'
+              }}>
+                <h3 style={{ 
+                  fontSize: '18px', 
+                  fontWeight: '600', 
+                  margin: 0,
+                  color: '#1e293b',
+                }}>
+                  📊 פעילות אחרונה
+                </h3>
+                
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {/* Time Filter */}
+                  <select 
+                    value={activityTimeFilter}
+                    onChange={(e) => setActivityTimeFilter(e.target.value as any)}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '2px solid #e5e7eb',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      fontFamily: 'Heebo, sans-serif',
+                      backgroundColor: 'white',
+                    }}
+                  >
+                    <option value="all">הכל</option>
+                    <option value="today">היום</option>
+                    <option value="3days">3 ימים אחרונים</option>
+                    <option value="week">שבוע אחרון</option>
+                  </select>
+                  
+                  {/* Limit Filter */}
+                  <select 
+                    value={activityLimit}
+                    onChange={(e) => setActivityLimit(Number(e.target.value))}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '2px solid #e5e7eb',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      cursor: 'pointer',
+                      fontFamily: 'Heebo, sans-serif',
+                      backgroundColor: 'white',
+                    }}
+                  >
+                    <option value={5}>הצג 5</option>
+                    <option value={10}>הצג 10</option>
+                    <option value={20}>הצג 20</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Activity List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {filteredUpdates.length === 0 ? (
+                  <div style={{ 
+                    textAlign: 'center', 
+                    padding: '40px', 
+                    color: '#94a3b8' 
+                  }}>
+                    <p style={{ fontSize: '48px', margin: '0 0 12px 0' }}>📭</p>
+                    <p style={{ margin: 0, fontSize: '14px' }}>אין פעילות בטווח זמן זה</p>
+                  </div>
+                ) : (
+                  filteredUpdates.map((update) => {
+                    const userName = profiles[update.user_id]?.full_name || 'משתמש'
+                    const timeAgo = getTimeAgo(update.created_at)
+                    const updateStatus = UPDATE_STATUSES[(update.status || 'open') as keyof typeof UPDATE_STATUSES] || UPDATE_STATUSES.open
+                    const isCompleted = update.status === 'completed' || update.status === 'verified'
+                    const updateComments: any[] = comments[update.id] || []
+                    const updateReadStatuses: any[] = readStatuses[update.id] || []
+                    
+                    // תגובות שלא נקראו = תגובות שאין להן read status של המשתמש הנוכחי
+                    const unreadComments = updateComments.filter((c: any) => {
+                      if (c.deleted_at) return false
+                      if (c.user_id === user?.id) return false // תגובות שלי לא נחשבות
+                      return !updateReadStatuses.some(r => r.comment_id === c.id)
+                    })
+                    
+                    const unreadCount = unreadComments.length
+                    
+                    return (
+                      <div key={update.id} style={{
+                        display: 'flex',
+                        alignItems: 'start',
+                        gap: '12px',
+                        padding: '14px',
+                        borderRadius: '12px',
+                        backgroundColor: '#f8fafc',
+                        border: '1px solid #e5e7eb',
+                        transition: 'all 0.2s ease',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => {
+                        sessionStorage.setItem('highlightUpdateId', update.id)
+                        router.push(`/projects/${projectId}/updates`)
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#f1f5f9'
+                        e.currentTarget.style.borderColor = '#6366F1'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = '#f8fafc'
+                        e.currentTarget.style.borderColor = '#e5e7eb'
+                      }}
+                      >
+                        <span style={{ fontSize: '24px' }}>
+                          {isCompleted ? '✅' : (updateStatus?.icon || '📝')}
+                        </span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '8px',
+                            marginBottom: '6px',
+                            flexWrap: 'wrap',
+                          }}>
+                            <p style={{ 
+                              margin: 0, 
+                              fontSize: '14px', 
+                              color: '#1e293b',
+                              fontWeight: '600' 
+                            }}>
+                              {userName} הוסיף עדכון
+                            </p>
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              backgroundColor: updateStatus.bgColor,
+                              color: updateStatus.color,
+                            }}>
+                              {updateStatus?.name || 'פתוח'}
+                            </span>
+                          </div>
+                          
+                          <p style={{ 
+                            margin: '0 0 8px 0', 
+                            fontSize: '13px', 
+                            color: '#64748b',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            textDecoration: isCompleted ? 'line-through' : 'none',
+                          }}>
+                            {update.content}
+                          </p>
+                          
+                          <div style={{ 
+                            display: 'flex', 
+                            gap: '12px', 
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                          }}>
+                            <span style={{ 
+                              fontSize: '12px', 
+                              color: '#94a3b8',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}>
+                              🕐 {timeAgo}
+                            </span>
+                            
+                            {/* Unread Comments count */}
+                            {unreadCount > 0 && (
+                              <span style={{ 
+                                fontSize: '12px', 
+                                color: '#EF4444',
+                                fontWeight: '600',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                backgroundColor: '#FEE2E2',
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                              }}>
+                                💬 {unreadCount} חדש{unreadCount > 1 ? 'ות' : 'ה'}
+                              </span>
+                            )}
+                            
+                            {/* Quick Action - Chat */}
+                            <div style={{ 
+                              display: 'flex', 
+                              gap: '6px',
+                              marginRight: 'auto',
+                            }}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  sessionStorage.setItem('openChatForUpdateId', update.id)
+                                  router.push(`/projects/${projectId}/updates`)
+                                }}
+                                style={{
+                                  padding: '4px 10px',
+                                  backgroundColor: '#EFF6FF',
+                                  color: '#3B82F6',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontSize: '12px',
+                                  fontWeight: '600',
+                                  cursor: 'pointer',
+                                  fontFamily: 'Heebo, sans-serif',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                                title="תגובה מהירה"
+                              >
+                                💬 תגובה
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+
+              {/* View All Button */}
+              {filteredUpdates.length > 0 && (
+                <div style={{ marginTop: '16px', textAlign: 'center' }}>
+                  <button
+                    onClick={() => router.push(`/projects/${projectId}/updates`)}
+                    style={{
+                      padding: '12px 24px',
+                      backgroundColor: '#6366F1',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '10px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      fontFamily: 'Heebo, sans-serif',
+                      transition: 'all 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#4F46E5'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = '#6366F1'
+                    }}
+                  >
+                    📋 ראה את כל העדכונים ({stats.totalUpdates})
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Coming Soon */}
+          <div style={{
+            padding: '40px',
+            backgroundColor: 'white',
+            borderRadius: '16px',
+            border: '2px dashed #6366F1',
+            textAlign: 'center',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          }}>
+            <p style={{ fontSize: '56px', marginBottom: '16px' }}>🚀</p>
+            <h3 style={{ 
+              fontSize: '22px', 
+              fontWeight: '700', 
+              marginBottom: '12px',
+              color: '#1e293b',
+            }}>
+              עוד פיצ'רים בדרך!
+            </h3>
+            <p style={{ color: '#64748b', fontSize: '15px', lineHeight: '1.6' }}>
+              תזרים מזומנים • ניהול כוח אדם • לוחות זמנים • בקרת איכות • דוחות מתקדמים
+            </p>
+          </div>
+
+        </div>
+      </div>
+    </div>
   )
 }
 
-// Work Type Badge Component
-function WorkTypeBadge({ 
-  workType, 
-  onClick,
-  size = 'normal' 
-}: { 
-  workType: WorkTypeId
-  onClick?: () => void
-  size?: 'small' | 'normal'
-}) {
-  const info = WORK_TYPES[workType] || WORK_TYPES.pending
-  const padding = size === 'small' ? '3px 8px' : '4px 10px'
-  const fontSize = size === 'small' ? '10px' : '11px'
+// ===== Helper Functions =====
+
+function getTimeAgo(date: string) {
+  const now = new Date()
+  const past = new Date(date)
+  const diffMs = now.getTime() - past.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMs / 3600000)
+  const diffDays = Math.floor(diffMs / 86400000)
   
+  if (diffMins < 1) return 'עכשיו'
+  if (diffMins < 60) return `לפני ${diffMins} דקות`
+  if (diffHours < 24) return `לפני ${diffHours} שעות`
+  if (diffDays === 1) return 'אתמול'
+  if (diffDays < 7) return `לפני ${diffDays} ימים`
+  return past.toLocaleDateString('he-IL')
+}
+
+// ===== Components =====
+
+function StatCard({ 
+  icon, 
+  title, 
+  value, 
+  subtitle, 
+  color,
+  onClick 
+}: { 
+  icon: string
+  title: string
+  value: string | number
+  subtitle: string
+  color: string
+  onClick?: () => void
+}) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        padding: '24px',
+        backgroundColor: 'white',
+        borderRadius: '16px',
+        border: '2px solid #e5e7eb',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'all 0.2s ease',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+      }}
+      onMouseEnter={(e) => {
+        if (onClick) {
+          e.currentTarget.style.borderColor = color
+          e.currentTarget.style.transform = 'translateY(-2px)'
+          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (onClick) {
+          e.currentTarget.style.borderColor = '#e5e7eb'
+          e.currentTarget.style.transform = 'translateY(0)'
+          e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)'
+        }
+      }}
+    >
+      <div style={{ fontSize: '36px', marginBottom: '16px' }}>
+        {icon}
+      </div>
+      <div style={{ fontSize: '28px', fontWeight: '700', color: color, marginBottom: '8px' }}>
+        {value}
+      </div>
+      <div style={{ fontSize: '15px', fontWeight: '600', marginBottom: '4px', color: '#1e293b' }}>
+        {title}
+      </div>
+      <div style={{ fontSize: '13px', color: '#94a3b8' }}>
+        {subtitle}
+      </div>
+    </div>
+  )
+}
+
+function QuickActionButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '4px',
-        padding,
-        borderRadius: '6px',
-        fontSize,
-        fontWeight: 600,
-        backgroundColor: info.bgColor,
-        color: info.color,
-        border: 'none',
-        cursor: onClick ? 'pointer' : 'default',
+        padding: '14px 24px',
+        backgroundColor: 'white',
+        border: '2px solid #e5e7eb',
+        borderRadius: '10px',
+        fontSize: '15px',
+        fontWeight: '600',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
         fontFamily: 'Heebo, sans-serif',
-        transition: 'all 0.15s ease',
+        color: '#1e293b',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = '#6366F1'
+        e.currentTarget.style.backgroundColor = '#EFF6FF'
+        e.currentTarget.style.transform = 'translateY(-1px)'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = '#e5e7eb'
+        e.currentTarget.style.backgroundColor = 'white'
+        e.currentTarget.style.transform = 'translateY(0)'
       }}
     >
-      <span>{info.icon}</span>
-      <span>{info.name}</span>
+      {label}
     </button>
-  )
-}
-
-
-// ===========================================
-// MAIN COMPONENT - Part 1: State & Effects
-// ===========================================
-
-export default function ProjectPage() {
-  
-  const params = useParams()
-  const projectId = params.id as string
-  const supabase = createClient()
-  const isMobile = useIsMobile()
-
-  // Panel State
-  const [showFilesPanel, setShowFilesPanel] = useState(false)
-  const [panelSizes, setPanelSizes] = useState<PanelSize>({ updates: 55, files: 45 })
-  const [isResizing, setIsResizing] = useState(false)
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  // Core State
-  const [project, setProject] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [user, setUser] = useState<any>(null)
-  const [userRole, setUserRole] = useState<string>('viewer')
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
-  
-  // Updates State
-  const [updates, setUpdates] = useState<any[]>([])
-  const [newUpdate, setNewUpdate] = useState('')
-  const [parsedUpdates, setParsedUpdates] = useState<any[]>([])
-  const [showReview, setShowReview] = useState(false)
-  const [sending, setSending] = useState(false)
-  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'in_progress' | 'completed'>('all')
-  const [workTypeFilter, setWorkTypeFilter] = useState<'all' | WorkTypeId>('all')
-  const [workTypeMenuUpdateId, setWorkTypeMenuUpdateId] = useState<string | null>(null)
-  
-  // Comments/Chat State
-  const [comments, setComments] = useState<{ [key: string]: any[] }>({})
-  const [images, setImages] = useState<{ [key: string]: any[] }>({})
-  const [reactions, setReactions] = useState<{ [key: string]: any[] }>({})
-  const [readStatuses, setReadStatuses] = useState<{ [key: string]: any[] }>({})
-  const [chatUpdateId, setChatUpdateId] = useState<string | null>(null)
-  const [chatUpdateContent, setChatUpdateContent] = useState<string>('')
-  
-  // Images State
-  const [selectedImages, setSelectedImages] = useState<File[]>([])
-  const [imagePreviews, setImagePreviews] = useState<string[]>([])
-  const [viewingImage, setViewingImage] = useState<string | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  // Team State
-  const [showTeamModal, setShowTeamModal] = useState(false)
-  const [teamMembers, setTeamMembers] = useState<any[]>([])
-  const [invitations, setInvitations] = useState<any[]>([])
-  const [inviteContact, setInviteContact] = useState('')
-  const [inviteRole, setInviteRole] = useState('member')
-  const [inviting, setInviting] = useState(false)
-  const [generatedLink, setGeneratedLink] = useState<string | null>(null)
-  const [profiles, setProfiles] = useState<{ [key: string]: any }>({})
-
-  // Files State
-  const [projectFiles, setProjectFiles] = useState<any[]>([])
-  const [selectedFile, setSelectedFile] = useState<any>(null)
-  
-  // File Upload State
-  const [showFileUpload, setShowFileUpload] = useState(false)
-  const [uploadingFile, setUploadingFile] = useState(false)
-  const [fileToUpload, setFileToUpload] = useState<File | null>(null)
-  const [fileUploadData, setFileUploadData] = useState({ trade: 'general', floor: 'general', stage: 'planning', unit: '', description: '' })
-  const projectFileInputRef = useRef<HTMLInputElement>(null)
-  
-  // Preview State
-  const [previewFile, setPreviewFile] = useState<any>(null)
-  const [showFileSelector, setShowFileSelector] = useState(false)
-  const [selectedFilesForUpdate, setSelectedFilesForUpdate] = useState<any[]>([])
-
-
-  // ===========================================
-  // RESIZE HANDLER
-  // ===========================================
-  
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault()
-    setIsResizing(true)
-  }
-  
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing || !containerRef.current) return
-      
-      const container = containerRef.current
-      const containerRect = container.getBoundingClientRect()
-      const containerWidth = containerRect.width
-      const mouseX = e.clientX - containerRect.left
-      
-      const filesPercent = Math.max(25, Math.min(65, ((containerWidth - mouseX) / containerWidth) * 100))
-      const updatesPercent = 100 - filesPercent
-      
-      setPanelSizes({ updates: updatesPercent, files: filesPercent })
-    }
-    
-    const handleMouseUp = () => setIsResizing(false)
-    
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove)
-      document.addEventListener('mouseup', handleMouseUp)
-    }
-    
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [isResizing])
-
-
-  // ===========================================
-  // EFFECTS
-  // ===========================================
-  
-  useEffect(() => {
-    const initializePage = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { window.location.href = '/login'; return }
-      setUser(user)
-      
-      const { data: projectData } = await supabase.from('projects').select('*').eq('id', projectId).single()
-      setProject(projectData)
-      
-      if (projectData?.owner_id === user.id) { 
-        setUserRole('owner') 
-      } else {
-        const { data: memberData } = await supabase.from('project_members').select('role').eq('project_id', projectId).eq('user_id', user.id).single()
-        if (memberData) setUserRole(memberData.role)
-      }
-      
-      setLoading(false)
-      fetchUpdates()
-      fetchTeamMembers()
-      fetchInvitations()
-      fetchProjectFiles()
-    }
-    
-    initializePage()
-  }, [projectId])
-
-
-  // ===========================================
-  // API FUNCTIONS
-  // ===========================================
-  
-  const fetchProfiles = async (userIds: string[]) => {
-    const uniqueIds = [...new Set(userIds)].filter(id => id && !profiles[id])
-    if (uniqueIds.length === 0) return
-    
-    const { data } = await supabase.from('profiles').select('*').in('id', uniqueIds)
-    if (data) {
-      const newProfiles = { ...profiles }
-      data.forEach(profile => { newProfiles[profile.id] = profile })
-      setProfiles(newProfiles)
-    }
-  }
-  
-  const fetchUpdates = async () => {
-    const { data } = await supabase.from('updates').select('*').eq('project_id', projectId).order('created_at', { ascending: false })
-    if (data) {
-      setUpdates(data)
-      fetchProfiles(data.map(u => u.user_id).filter(Boolean))
-      data.forEach(update => { 
-        fetchComments(update.id)
-        fetchImages(update.id)
-      })
-    }
-  }
-  
-  const fetchComments = async (updateId: string) => {
-    const { data } = await supabase.from('comments').select('*').eq('update_id', updateId).order('created_at', { ascending: true })
-    if (data) {
-      setComments(prev => ({ ...prev, [updateId]: data }))
-      fetchProfiles(data.map(c => c.user_id).filter(Boolean))
-      fetchReactions(updateId, data)
-      fetchReadStatuses(updateId, data)
-    }
-  }
-  
-  const fetchImages = async (updateId: string) => {
-    const { data } = await supabase.from('images').select('*').eq('update_id', updateId).order('created_at', { ascending: true })
-    if (data) setImages(prev => ({ ...prev, [updateId]: data }))
-  }
-  
-  const fetchReactions = async (updateId: string, commentsList: any[]) => {
-    const commentIds = commentsList.map(c => c.id)
-    if (commentIds.length === 0) {
-      setReactions(prev => ({ ...prev, [updateId]: [] }))
-      return
-    }
-    const { data } = await supabase.from('comment_reactions').select('*').in('comment_id', commentIds)
-    if (data) setReactions(prev => ({ ...prev, [updateId]: data }))
-  }
-  
-  const fetchReadStatuses = async (updateId: string, commentsList: any[]) => {
-    const commentIds = commentsList.map(c => c.id)
-    if (commentIds.length === 0) {
-      setReadStatuses(prev => ({ ...prev, [updateId]: [] }))
-      return
-    }
-    const { data } = await supabase.from('comment_reads').select('*').in('comment_id', commentIds)
-    if (data) setReadStatuses(prev => ({ ...prev, [updateId]: data }))
-  }
-  
-  const fetchTeamMembers = async () => {
-    const { data } = await supabase.from('project_members').select('*').eq('project_id', projectId)
-    if (data) { 
-      setTeamMembers(data)
-      fetchProfiles(data.map(m => m.user_id).filter(Boolean)) 
-    }
-  }
-  
-  const fetchInvitations = async () => {
-    const { data } = await supabase.from('invitations').select('*').eq('project_id', projectId).eq('accepted', false)
-    if (data) setInvitations(data)
-  }
-  
-  const fetchProjectFiles = async () => {
-    const { data } = await supabase.from('project_files').select('*').eq('project_id', projectId).order('created_at', { ascending: false })
-    if (data) {
-      setProjectFiles(data)
-      window.postMessage({ type: 'FILES_UPDATED', files: data }, '*')
-    }
-  }
-
-
-  // ===========================================
-  // HANDLERS
-  // ===========================================
-  
-  const canEdit = () => ['owner', 'admin', 'member'].includes(userRole)
-  
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => setNewUpdate(e.target.value)
-  
-  const handleSubmit = () => {
-    if (!newUpdate.trim() && selectedImages.length === 0) return
-    setParsedUpdates(parseMultipleUpdates(newUpdate.trim() || 'תמונה'))
-    setShowReview(true)
-  }
-
-  const toggleUpdateSelection = (index: number) => {
-    const updated = [...parsedUpdates]
-    updated[index].selected = !updated[index].selected
-    setParsedUpdates(updated)
-  }
-
-  const updateParsedCategory = (index: number, newCategory: any) => {
-    const updated = [...parsedUpdates]
-    updated[index].category = newCategory
-    setParsedUpdates(updated)
-  }
-  
-  const sendUpdate = async () => {
-    if (!user) return
-    setSending(true)
-    
-    try {
-      const updatesToSend = parsedUpdates.filter(u => u.selected)
-      for (const update of updatesToSend) {
-        const { data: newUpdateData } = await supabase.from('updates').insert({
-          project_id: projectId, 
-          content: update.content, 
-          category: update.category.id,
-          user_id: user.id, 
-          status: 'open',
-          work_type: 'pending',
-          tagged_files: selectedFilesForUpdate.map(f => f.id),
-        }).select().single()
-        
-        if (newUpdateData && selectedImages.length > 0) {
-          for (const file of selectedImages) await uploadImage(file, newUpdateData.id)
-        }
-      }
-      
-      setNewUpdate('')
-      setParsedUpdates([])
-      setShowReview(false)
-      setSelectedImages([])
-      setImagePreviews([])
-      setSelectedFilesForUpdate([])
-      setShowFileSelector(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-      
-      setToast({ message: updatesToSend.length > 1 ? `נוספו ${updatesToSend.length} עדכונים!` : 'העדכון נוסף!', type: 'success' })
-      fetchUpdates()
-    } catch (error) {
-      setToast({ message: 'שגיאה בשליחה', type: 'error' })
-    }
-    
-    setSending(false)
-  }
-
-  const updateStatus = async (updateId: string, newStatus: UpdateStatusId) => {
-    await supabase.from('updates').update({ status: newStatus }).eq('id', updateId)
-    setToast({ message: `הסטטוס עודכן ל${UPDATE_STATUSES[newStatus].name}`, type: 'success' })
-    fetchUpdates()
-  }
-
-  const updateWorkType = async (updateId: string, newWorkType: WorkTypeId) => {
-    await supabase.from('updates').update({ work_type: newWorkType }).eq('id', updateId)
-    setWorkTypeMenuUpdateId(null)
-    setToast({ message: `סוג העבודה עודכן ל${WORK_TYPES[newWorkType].name}`, type: 'success' })
-    fetchUpdates()
-  }
-
-  const deleteUpdate = async (updateId: string) => {
-    if (!confirm('למחוק את העדכון?')) return
-    await supabase.from('updates').delete().eq('id', updateId)
-    setToast({ message: 'העדכון נמחק', type: 'success' })
-    fetchUpdates()
-  }
-  
-  const handleImagesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    setSelectedImages(prev => [...prev, ...files])
-    setImagePreviews(prev => [...prev, ...files.map(file => URL.createObjectURL(file))])
-  }
-
-  const removeSelectedImage = (index: number) => {
-    setSelectedImages(prev => prev.filter((_, i) => i !== index))
-    setImagePreviews(prev => prev.filter((_, i) => i !== index))
-  }
-
-  const uploadImage = async (file: File, updateId: string, commentId?: string) => {
-    const fileExt = file.name.split('.').pop()
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
-    const filePath = `${projectId}/${updateId}/${commentId || 'main'}/${fileName}`
-    
-    const { error } = await supabase.storage.from('project-images').upload(filePath, file)
-    if (error) throw error
-    
-    const { data: urlData } = supabase.storage.from('project-images').getPublicUrl(filePath)
-    await supabase.from('images').insert({ 
-      update_id: updateId, 
-      comment_id: commentId || null, 
-      url: urlData.publicUrl, 
-      user_id: user?.id 
-    })
-  }
-  
-  const openChat = (updateId: string, updateContent: string) => {
-    setChatUpdateId(updateId)
-    setChatUpdateContent(updateContent)
-    fetchComments(updateId)
-    fetchImages(updateId)
-  }
-  
-  const sendChatMessage = async (content: string, replyTo?: string, imageFiles?: File[], taggedFileIds?: string[]) => {
-    if (!chatUpdateId || !user) return
-    
-    try {
-      const { data: commentData } = await supabase.from('comments').insert({
-        update_id: chatUpdateId,
-        content: content,
-        user_id: user.id,
-        reply_to: replyTo || null,
-        tagged_files: taggedFileIds || [],
-      }).select().single()
-
-      if (commentData && imageFiles && imageFiles.length > 0) {
-        for (const file of imageFiles) {
-          await uploadImage(file, chatUpdateId, commentData.id)
-        }
-      }
-
-      fetchComments(chatUpdateId)
-      fetchImages(chatUpdateId)
-    } catch (error) {
-      setToast({ message: 'שגיאה בשליחת ההודעה', type: 'error' })
-    }
-  }
-  
-  const deleteChatMessage = async (messageId: string) => {
-    if (!chatUpdateId) return
-    try {
-      await supabase.from('comments').update({ deleted_at: new Date().toISOString() }).eq('id', messageId)
-      fetchComments(chatUpdateId)
-    } catch (error) {
-      setToast({ message: 'שגיאה במחיקת ההודעה', type: 'error' })
-    }
-  }
-  
-  const addReaction = async (messageId: string, emoji: string) => {
-    if (!chatUpdateId || !user) return
-    try {
-      await supabase.from('comment_reactions').insert({ comment_id: messageId, user_id: user.id, emoji: emoji })
-      const currentComments = comments[chatUpdateId] || []
-      fetchReactions(chatUpdateId, currentComments)
-    } catch (error) {}
-  }
-  
-  const removeReaction = async (messageId: string, emoji: string) => {
-    if (!chatUpdateId || !user) return
-    try {
-      await supabase.from('comment_reactions').delete().eq('comment_id', messageId).eq('user_id', user.id).eq('emoji', emoji)
-      const currentComments = comments[chatUpdateId] || []
-      fetchReactions(chatUpdateId, currentComments)
-    } catch (error) {}
-  }
-  
-  const markMessagesAsRead = async (messageIds: string[]) => {
-    if (!user || messageIds.length === 0) return
-    try {
-      const inserts = messageIds.map(id => ({ comment_id: id, user_id: user.id }))
-      await supabase.from('comment_reads').upsert(inserts, { onConflict: 'comment_id,user_id' })
-      if (chatUpdateId) {
-        const currentComments = comments[chatUpdateId] || []
-        fetchReadStatuses(chatUpdateId, currentComments)
-      }
-    } catch (error) {}
-  }
-  
-  const handleProjectFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) { setFileToUpload(file); setShowFileUpload(true) }
-  }
-
-  const uploadProjectFile = async () => {
-    if (!fileToUpload || !user) return
-    setUploadingFile(true)
-    
-    try {
-      const fileExt = fileToUpload.name.split('.').pop()?.toLowerCase() || ''
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
-      const filePath = `${projectId}/files/${fileName}`
-      
-      const { error: uploadError } = await supabase.storage.from('project-files').upload(filePath, fileToUpload)
-      if (uploadError) throw uploadError
-      
-      const { data: urlData } = supabase.storage.from('project-files').getPublicUrl(filePath)
-      
-      await supabase.from('project_files').insert({
-        project_id: projectId, user_id: user.id, file_name: fileToUpload.name,
-        file_url: urlData.publicUrl, file_size: fileToUpload.size, file_type: fileExt,
-        trade: fileUploadData.trade, floor: fileUploadData.floor, stage: fileUploadData.stage,
-        unit: fileUploadData.unit || null, description: fileUploadData.description || null,
-      })
-      
-      setToast({ message: 'הקובץ הועלה בהצלחה!', type: 'success' })
-      setShowFileUpload(false)
-      setFileToUpload(null)
-      setFileUploadData({ trade: 'general', floor: 'general', stage: 'planning', unit: '', description: '' })
-      if (projectFileInputRef.current) projectFileInputRef.current.value = ''
-      fetchProjectFiles()
-    } catch (error) {
-      setToast({ message: 'שגיאה בהעלאת הקובץ', type: 'error' })
-    }
-    setUploadingFile(false)
-  }
-
-  const deleteProjectFile = async (file: any) => {
-    if (!confirm(`למחוק את "${file.file_name}"?`)) return
-    try {
-      const filePath = file.file_url.split('/project-files/')[1]
-      if (filePath) await supabase.storage.from('project-files').remove([filePath])
-      await supabase.from('project_files').delete().eq('id', file.id)
-      setToast({ message: 'הקובץ נמחק', type: 'success' })
-      if (selectedFile?.id === file.id) setSelectedFile(null)
-      fetchProjectFiles()
-    } catch (error) {
-      setToast({ message: 'שגיאה במחיקה', type: 'error' })
-    }
-  }
-  
-  const handleFileClick = (file: any) => {
-    setSelectedFile(file)
-    if (!showFilesPanel) setShowFilesPanel(true)
-  }
-  
-  const toggleFileForUpdate = (file: any) => {
-    if (selectedFilesForUpdate.find(f => f.id === file.id)) {
-      setSelectedFilesForUpdate(selectedFilesForUpdate.filter(f => f.id !== file.id))
-    } else {
-      setSelectedFilesForUpdate([...selectedFilesForUpdate, file])
-    }
-  }
-  
-  const createInvitation = async () => {
-    if (!inviteContact.trim()) return
-    setInviting(true)
-    
-    try {
-      const isEmail = inviteContact.includes('@')
-      const contact = isEmail ? { email: inviteContact.trim() } : { phone: inviteContact.trim() }
-      
-      if (contact.phone) {
-        const { data: existingUser } = await supabase.from('profiles').select('id').eq('phone', contact.phone).single()
-        if (existingUser) {
-          await supabase.from('project_members').insert({ project_id: projectId, user_id: existingUser.id, role: inviteRole })
-          setToast({ message: 'המשתמש נוסף לפרויקט!', type: 'success' })
-          setInviteContact('')
-          fetchTeamMembers()
-          setInviting(false)
-          return
-        }
-      }
-      
-      const token = generateToken()
-      await supabase.from('invitations').insert({ project_id: projectId, invited_by: user?.id, ...contact, role: inviteRole, token })
-      setGeneratedLink(`${window.location.origin}/invite/${token}`)
-      setToast({ message: 'הזמנה נוצרה!', type: 'success' })
-      fetchInvitations()
-    } catch (error) {
-      setToast({ message: 'שגיאה ביצירת הזמנה', type: 'error' })
-    }
-    setInviting(false)
-  }
-
-  const copyLink = () => { 
-    if (generatedLink) { 
-      navigator.clipboard.writeText(generatedLink)
-      setToast({ message: 'הלינק הועתק!', type: 'success' }) 
-    } 
-  }
-  
-  const formatPhoneForWhatsApp = (phone: string) => { 
-    let cleaned = phone.replace(/\D/g, '')
-    if (cleaned.startsWith('0')) cleaned = '972' + cleaned.substring(1)
-    return cleaned 
-  }
-  
-  const shareWhatsApp = () => {
-    if (!generatedLink || !project) return
-    const message = `הוזמנת להצטרף לפרויקט "${project.name}" ב-Projekta!\n\nלחץ על הלינק להצטרפות:\n${generatedLink}`
-    const whatsappNumber = inviteContact.includes('@') ? '' : formatPhoneForWhatsApp(inviteContact)
-    window.open(whatsappNumber ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}` : `https://wa.me/?text=${encodeURIComponent(message)}`, '_blank')
-  }
-  
-  const cancelInvitation = async (invId: string) => { 
-    await supabase.from('invitations').delete().eq('id', invId)
-    setToast({ message: 'ההזמנה בוטלה', type: 'success' })
-    fetchInvitations() 
-  }
-  
-  const updateMemberRole = async (memberId: string, newRole: string) => { 
-    await supabase.from('project_members').update({ role: newRole }).eq('id', memberId)
-    fetchTeamMembers() 
-  }
-  
-  const removeMember = async (memberId: string) => { 
-    if (!confirm('להסיר את חבר הצוות?')) return
-    await supabase.from('project_members').delete().eq('id', memberId)
-    setToast({ message: 'חבר הצוות הוסר', type: 'success' })
-    fetchTeamMembers() 
-  }
-
-
-  // ===========================================
-  // COMPUTED VALUES
-  // ===========================================
-  
-  const filteredUpdates = updates.filter(update => {
-    if (statusFilter === 'open' && !(!update.status || update.status === 'open' || update.status === 'in_review')) return false
-    if (statusFilter === 'in_progress' && !(update.status === 'approved' || update.status === 'in_progress')) return false
-    if (statusFilter === 'completed' && !(update.status === 'completed' || update.status === 'verified')) return false
-    if (workTypeFilter !== 'all' && update.work_type !== workTypeFilter) return false
-    return true
-  })
-
-  const groupedUpdates = CATEGORIES.map(category => ({
-    ...category,
-    updates: filteredUpdates.filter(u => u.category === category.id)
-  })).filter(category => category.updates.length > 0)
-  
-  const allTeamMemberIds = [project?.owner_id, ...teamMembers.map(m => m.user_id)].filter(Boolean)
-
-  const stats = {
-    open: updates.filter(u => !u.status || u.status === 'open' || u.status === 'in_review').length,
-    inProgress: updates.filter(u => u.status === 'approved' || u.status === 'in_progress').length,
-    completed: updates.filter(u => u.status === 'completed' || u.status === 'verified').length,
-    contract: updates.filter(u => u.work_type === 'contract').length,
-    addition: updates.filter(u => u.work_type === 'addition').length,
-  }
-  // ===========================================
-  // LOADING STATES
-  // ===========================================
-  
-  if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '40px', marginBottom: '16px' }}>⏳</div>
-          <p style={{ color: '#64748b', fontFamily: 'Heebo, sans-serif' }}>טוען...</p>
-        </div>
-      </div>
-    )
-  }
-  
-  if (!project) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '40px', marginBottom: '16px' }}>😕</div>
-          <p style={{ color: '#64748b', fontFamily: 'Heebo, sans-serif' }}>פרויקט לא נמצא</p>
-        </div>
-      </div>
-    )
-  }
-
-
-  // ===========================================
-  // RENDER
-  // ===========================================
-  
-  return (
-    <>
-      <style jsx global>{`
-        @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700&display=swap');
-        * { font-family: 'Heebo', sans-serif; box-sizing: border-box; }
-        body { margin: 0; }
-      `}</style>
-
-      <div style={modernStyles.page}>
-        
-        {/* HEADER */}
-        <div style={modernStyles.header}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <a href="/projects" style={{ 
-              color: 'white', textDecoration: 'none', fontSize: '18px',
-              width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              borderRadius: '8px', backgroundColor: 'rgba(255,255,255,0.15)',
-            }}>←</a>
-            <div>
-              <h1 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>{project.name}</h1>
-              <span style={{ fontSize: '12px', opacity: 0.8 }}>{updates.length} עדכונים • {projectFiles.length} קבצים</span>
-            </div>
-          </div>
-          
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={() => setShowFilesPanel(!showFilesPanel)} style={{
-              ...modernStyles.buttonSecondary,
-              backgroundColor: showFilesPanel ? 'white' : 'rgba(255,255,255,0.15)',
-              color: showFilesPanel ? '#6366F1' : 'white',
-              border: 'none',
-            }}>
-              📁 קבצים {projectFiles.length > 0 && `(${projectFiles.length})`}
-            </button>
-            
-            <button onClick={() => setShowTeamModal(true)} style={{
-              ...modernStyles.buttonSecondary,
-              backgroundColor: 'rgba(255,255,255,0.15)',
-              color: 'white',
-              border: 'none',
-            }}>
-              👥 צוות ({teamMembers.length + 1})
-            </button>
-          </div>
-        </div>
-
-
-        {/* MAIN CONTENT */}
-        <div ref={containerRef} style={modernStyles.mainContainer}>
-          
-          {/* Updates Panel */}
-          <div style={{ 
-            ...modernStyles.panel, 
-            width: showFilesPanel && !isMobile ? `${panelSizes.updates}%` : '100%',
-            borderLeft: showFilesPanel && !isMobile ? '1px solid #e5e7eb' : 'none',
-          }}>
-            <div style={modernStyles.panelContent}>
-              <div style={modernStyles.updatesContainer}>
-                
-                {/* Stats Cards */}
-                <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
-                  {[
-                    { key: 'open', icon: '🔴', color: '#ef4444', bg: '#fef2f2', label: 'פתוחים', count: stats.open },
-                    { key: 'in_progress', icon: '🔵', color: '#3b82f6', bg: '#eff6ff', label: 'בעבודה', count: stats.inProgress },
-                    { key: 'completed', icon: '✅', color: '#16a34a', bg: '#dcfce7', label: 'הושלמו', count: stats.completed },
-                  ].map(stat => (
-                    <button key={stat.key} onClick={() => setStatusFilter(statusFilter === stat.key ? 'all' : stat.key as any)} style={{
-                      ...modernStyles.statCard,
-                      backgroundColor: statusFilter === stat.key ? stat.bg : 'white',
-                      borderColor: statusFilter === stat.key ? stat.color : '#e5e7eb',
-                      borderWidth: statusFilter === stat.key ? '2px' : '1px',
-                      borderStyle: 'solid',
-                    }}>
-                      <span style={{ fontSize: '24px' }}>{stat.icon}</span>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '20px', fontWeight: '700', color: stat.color }}>{stat.count}</div>
-                        <div style={{ fontSize: '12px', color: '#64748b' }}>{stat.label}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-                
-                {/* Filter Chips */}
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontSize: '12px', color: '#64748b' }}>סינון:</span>
-                  <button onClick={() => setWorkTypeFilter(workTypeFilter === 'contract' ? 'all' : 'contract')} style={{
-                    ...modernStyles.chip,
-                    backgroundColor: workTypeFilter === 'contract' ? '#dbeafe' : '#f1f5f9',
-                    color: workTypeFilter === 'contract' ? '#1d4ed8' : '#475569',
-                  }}>📋 בחוזה ({stats.contract})</button>
-                  <button onClick={() => setWorkTypeFilter(workTypeFilter === 'addition' ? 'all' : 'addition')} style={{
-                    ...modernStyles.chip,
-                    backgroundColor: workTypeFilter === 'addition' ? '#fef3c7' : '#f1f5f9',
-                    color: workTypeFilter === 'addition' ? '#d97706' : '#475569',
-                  }}>➕ תוספות ({stats.addition})</button>
-                  {(statusFilter !== 'all' || workTypeFilter !== 'all') && (
-                    <button onClick={() => { setStatusFilter('all'); setWorkTypeFilter('all') }} style={{
-                      ...modernStyles.chip, backgroundColor: '#fef2f2', color: '#ef4444',
-                    }}>✕ נקה</button>
-                  )}
-                </div>
-
-                {/* New Update Form */}
-                {canEdit() && (
-                  <div style={{ ...modernStyles.card, padding: '16px', marginBottom: '24px' }}>
-                    <textarea placeholder="מה קורה בפרויקט?" value={newUpdate} onChange={handleTextChange}
-                      style={{ ...modernStyles.input, minHeight: '80px', resize: 'vertical' }} />
-
-                    {imagePreviews.length > 0 && (
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-                        {imagePreviews.map((preview, idx) => (
-                          <div key={idx} style={{ position: 'relative' }}>
-                            <img src={preview} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '8px' }} />
-                            <button onClick={() => removeSelectedImage(idx)} style={{ 
-                              position: 'absolute', top: '-6px', right: '-6px', width: '20px', height: '20px', 
-                              borderRadius: '50%', backgroundColor: '#ef4444', color: 'white', border: '2px solid white', 
-                              cursor: 'pointer', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' 
-                            }}>×</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {showReview && parsedUpdates.length > 0 && (
-                      <div style={{ marginTop: '12px', padding: '14px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #6366F1' }}>
-                        <p style={{ margin: '0 0 12px', fontWeight: '600', color: '#6366F1', fontSize: '13px' }}>🤖 בחר קטגוריה:</p>
-                        {parsedUpdates.map((update, idx) => (
-                          <div key={idx} style={{ padding: '10px', backgroundColor: 'white', borderRadius: '8px', marginBottom: '8px', border: '1px solid #e5e7eb' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                              <input type="checkbox" checked={update.selected} onChange={() => toggleUpdateSelection(idx)} style={{ accentColor: '#6366F1' }} />
-                              <span style={{ fontSize: '13px', color: '#374151' }}>{update.content}</span>
-                            </div>
-                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                              {CATEGORIES.map(cat => (
-                                <button key={cat.id} onClick={() => updateParsedCategory(idx, cat)} style={{ 
-                                  ...modernStyles.chip,
-                                  backgroundColor: update.category.id === cat.id ? '#6366F1' : '#f1f5f9',
-                                  color: update.category.id === cat.id ? 'white' : '#475569',
-                                  fontSize: '11px', padding: '4px 8px',
-                                }}>{cat.icon} {cat.name}</button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '12px' }}>
-                          <button onClick={() => { setShowReview(false); setParsedUpdates([]) }} style={modernStyles.buttonSecondary}>ביטול</button>
-                          <button onClick={sendUpdate} disabled={sending} style={{ ...modernStyles.buttonPrimary, backgroundColor: '#10b981' }}>
-                            {sending ? '...' : `✓ שלח (${parsedUpdates.filter(u => u.selected).length})`}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {!showReview && (
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
-                        <input type="file" ref={fileInputRef} onChange={handleImagesSelect} accept="image/*" multiple style={{ display: 'none' }} />
-                        <button onClick={() => fileInputRef.current?.click()} style={modernStyles.buttonSecondary}>
-                          📷 תמונות {selectedImages.length > 0 && `(${selectedImages.length})`}
-                        </button>
-                        <button onClick={() => setShowFileSelector(!showFileSelector)} style={{
-                          ...modernStyles.buttonSecondary,
-                          backgroundColor: showFileSelector ? '#eff6ff' : 'white',
-                        }}>📎 צרף קובץ {selectedFilesForUpdate.length > 0 && `(${selectedFilesForUpdate.length})`}</button>
-                        <button onClick={handleSubmit} disabled={!newUpdate.trim() && selectedImages.length === 0} style={{
-                          ...modernStyles.buttonPrimary, marginRight: 'auto',
-                          opacity: (newUpdate.trim() || selectedImages.length > 0) ? 1 : 0.5,
-                        }}>שלח עדכון</button>
-                      </div>
-                    )}
-
-                    {showFileSelector && projectFiles.length > 0 && (
-                      <div style={{ marginTop: '12px', padding: '14px', backgroundColor: '#f8fafc', borderRadius: '8px', maxHeight: '200px', overflow: 'auto' }}>
-                        <p style={{ margin: '0 0 10px', fontSize: '13px', color: '#64748b', fontWeight: '500' }}>בחר קבצים לתיוג:</p>
-                        {projectFiles.map(file => (
-                          <div key={file.id} onClick={() => toggleFileForUpdate(file)} style={{ 
-                            display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', borderRadius: '10px', 
-                            cursor: 'pointer', backgroundColor: selectedFilesForUpdate.find(f => f.id === file.id) ? '#eff6ff' : 'white', 
-                            marginBottom: '6px', border: selectedFilesForUpdate.find(f => f.id === file.id) ? '1px solid #6366F1' : '1px solid #e5e7eb' 
-                          }}>
-                            <input type="checkbox" checked={!!selectedFilesForUpdate.find(f => f.id === file.id)} readOnly style={{ accentColor: '#6366F1' }} />
-                            <span style={{ fontSize: '18px' }}>{getFileIcon(file.file_type)}</span>
-                            <span style={{ fontSize: '13px', fontWeight: '500' }}>{file.file_name}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Updates List */}
-                {groupedUpdates.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '60px 40px', color: '#64748b' }}>
-                    <p style={{ fontSize: '48px', marginBottom: '12px' }}>📋</p>
-                    <p style={{ fontSize: '15px', fontWeight: '500' }}>
-                      {statusFilter !== 'all' || workTypeFilter !== 'all' ? 'אין עדכונים בסינון הנוכחי' : 'אין עדכונים עדיין'}
-                    </p>
-                  </div>
-                ) : (
-                  groupedUpdates.map(category => (
-                    <div key={category.id} style={{ marginBottom: '28px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
-                        <span style={{ fontSize: '22px' }}>{category.icon}</span>
-                        <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>{category.name}</span>
-                        <span style={{ ...modernStyles.badge, backgroundColor: '#eff6ff', color: '#6366F1' }}>{category.updates.length}</span>
-                      </div>
-                      
-                      {category.updates.map(update => {
-                        const updateComments = comments[update.id] || []
-                        const updateImages = images[update.id] || []
-                        const userName = profiles[update.user_id]?.full_name || 'משתמש'
-                        const taggedFiles = update.tagged_files ? projectFiles.filter(f => update.tagged_files.includes(f.id)) : []
-                        const isCompleted = update.status === 'completed' || update.status === 'verified'
-
-                        return (
-                          <div key={update.id} style={{ ...modernStyles.updateCard, opacity: isCompleted ? 0.7 : 1 }}>
-                            <div style={modernStyles.updateCardHeader}>
-                              <StatusBadge status={update.status || 'open'} size="small" />
-                              <div style={{ position: 'relative' }}>
-                                <WorkTypeBadge workType={update.work_type || 'pending'} size="small"
-                                  onClick={() => canEdit() && setWorkTypeMenuUpdateId(workTypeMenuUpdateId === update.id ? null : update.id)} />
-                                {workTypeMenuUpdateId === update.id && (
-                                  <>
-                                    <div onClick={() => setWorkTypeMenuUpdateId(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99 }} />
-                                    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', backgroundColor: 'white', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', border: '1px solid #e5e7eb', zIndex: 100, minWidth: '130px', overflow: 'hidden' }}>
-                                      {Object.entries(WORK_TYPES).map(([key, val]) => (
-                                        <button key={key} onClick={() => updateWorkType(update.id, key as WorkTypeId)} style={{
-                                          width: '100%', padding: '8px 12px', border: 'none', cursor: 'pointer',
-                                          backgroundColor: update.work_type === key ? val.bgColor : 'white',
-                                          display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontFamily: 'Heebo, sans-serif',
-                                        }}><span>{val.icon}</span><span>{val.name}</span></button>
-                                      ))}
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                              <span style={{ marginRight: 'auto', fontSize: '11px', color: '#94a3b8' }}>{userName} • {new Date(update.created_at).toLocaleDateString('he-IL')}</span>
-                            </div>
-
-                            <div style={modernStyles.updateCardBody}>
-                              <p style={{ margin: 0, fontSize: '14px', lineHeight: '1.6', color: '#374151', textDecoration: isCompleted ? 'line-through' : 'none' }}>{update.content}</p>
-                              
-                              {taggedFiles.length > 0 && (
-                                <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
-                                  {taggedFiles.map(file => (
-                                    <div key={file.id} onClick={() => handleFileClick(file)} style={{ 
-                                      display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#f1f5f9', 
-                                      padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: '500' 
-                                    }}><span>{getFileIcon(file.file_type)}</span><span>{file.file_name}</span></div>
-                                  ))}
-                                </div>
-                              )}
-
-                              {updateImages.filter(img => !img.comment_id).length > 0 && (
-                                <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-                                  {updateImages.filter(img => !img.comment_id).map(img => (
-                                    <img key={img.id} src={img.url} onClick={() => setViewingImage(img.url)} 
-                                      style={{ width: '56px', height: '56px', objectFit: 'cover', borderRadius: '8px', cursor: 'pointer' }} />
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            <div style={modernStyles.updateCardFooter}>
-                              <button onClick={() => openChat(update.id, update.content)} style={{ 
-                                ...modernStyles.buttonPrimary, background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)', padding: '6px 12px', fontSize: '12px',
-                              }}>💬 {updateComments.filter(c => !c.deleted_at).length || 'דיון'}</button>
-                              
-                              {canEdit() && !isCompleted && (
-                                <button onClick={() => updateStatus(update.id, 'completed')} style={{ ...modernStyles.chip, backgroundColor: '#dcfce7', color: '#16a34a' }}>✓ סיום</button>
-                              )}
-                              {canEdit() && isCompleted && (
-                                <button onClick={() => updateStatus(update.id, 'open')} style={{ ...modernStyles.chip, backgroundColor: '#fef3c7', color: '#d97706' }}>↩ פתח</button>
-                              )}
-                              {canEdit() && (
-                                <button onClick={() => deleteUpdate(update.id)} style={{ ...modernStyles.buttonGhost, marginRight: 'auto', color: '#ef4444' }}>🗑️</button>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Resizer */}
-          {showFilesPanel && !isMobile && (
-            <div onMouseDown={handleMouseDown} style={{ ...modernStyles.resizer, backgroundColor: isResizing ? '#6366F1' : '#e5e7eb' }}>
-              <div style={{ width: '4px', height: '40px', backgroundColor: isResizing ? 'white' : '#94a3b8', borderRadius: '2px', opacity: 0.5 }} />
-            </div>
-          )}
-
-          {/* Files Panel - Desktop */}
-          {showFilesPanel && !isMobile && (
-            <div style={{ ...modernStyles.panel, width: `${panelSizes.files}%` }}>
-              <FilesPanel
-                projectFiles={projectFiles}
-                onClose={() => setShowFilesPanel(false)}
-                onUpload={() => projectFileInputRef.current?.click()}
-                onPreview={(file) => canPreview(file.file_type) ? setPreviewFile(file) : window.open(file.file_url, '_blank')}
-                onDelete={deleteProjectFile}
-                onFileSelect={handleFileClick}
-              />
-            </div>
-          )}
-        </div>
-
-
-        {/* ============================================= */}
-        {/* MODALS */}
-        {/* ============================================= */}
-
-        {/* Mobile Files Panel */}
-        {showFilesPanel && isMobile && (
-          <MobileFilesPanel
-            projectFiles={projectFiles}
-            onClose={() => setShowFilesPanel(false)}
-            onUpload={() => projectFileInputRef.current?.click()}
-            onPreview={(file) => canPreview(file.file_type) ? setPreviewFile(file) : window.open(file.file_url, '_blank')}
-            onDelete={deleteProjectFile}
-          />
-        )}
-
-        {/* Hidden File Input */}
-        <input type="file" ref={projectFileInputRef} onChange={handleProjectFileSelect} style={{ display: 'none' }} />
-
-        {/* WhatsApp Chat */}
-        {chatUpdateId && (
-          <WhatsAppChat
-            messages={comments[chatUpdateId] || []}
-            currentUserId={user?.id || ''}
-            profiles={profiles}
-            images={images[chatUpdateId] || []}
-            reactions={reactions[chatUpdateId] || []}
-            readStatuses={readStatuses[chatUpdateId] || []}
-            teamMemberIds={allTeamMemberIds}
-            projectFiles={projectFiles}
-            onSendMessage={sendChatMessage}
-            onDeleteMessage={deleteChatMessage}
-            onAddReaction={addReaction}
-            onRemoveReaction={removeReaction}
-            onMarkAsRead={markMessagesAsRead}
-            onFileClick={(file) => { handleFileClick(file); setChatUpdateId(null) }}
-            onClose={() => setChatUpdateId(null)}
-            updateContent={chatUpdateContent}
-            isMobile={isMobile}
-          />
-        )}
-
-        {/* File Upload Modal */}
-        {showFileUpload && (
-          <div onClick={() => setShowFileUpload(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-            <div onClick={(e) => e.stopPropagation()} style={{ ...modernStyles.card, width: '90%', maxWidth: '450px', padding: '24px' }}>
-              <h2 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px', fontWeight: '600' }}>📤 העלאת קובץ</h2>
-              
-              <div style={{ backgroundColor: '#f8fafc', padding: '14px', borderRadius: '10px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '32px' }}>{getFileIcon(fileToUpload?.name.split('.').pop() || '')}</span>
-                <div>
-                  <p style={{ margin: 0, fontWeight: '600', fontSize: '14px' }}>{fileToUpload?.name}</p>
-                  <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>{formatFileSize(fileToUpload?.size || 0)}</p>
-                </div>
-              </div>
-              
-              {[
-                { key: 'stage', label: 'שלב', items: STAGES },
-                { key: 'floor', label: 'קומה', items: FLOORS.slice(0, 5) },
-                { key: 'trade', label: 'מקצוע', items: TRADES.slice(0, 5) },
-              ].map(section => (
-                <div key={section.key} style={{ marginBottom: '16px' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500', fontSize: '13px' }}>{section.label}</label>
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                    {section.items.map(item => (
-                      <button key={item.id} onClick={() => setFileUploadData({ ...fileUploadData, [section.key]: item.id })} style={{ 
-                        ...modernStyles.chip, 
-                        backgroundColor: fileUploadData[section.key as keyof typeof fileUploadData] === item.id ? '#6366F1' : '#f1f5f9',
-                        color: fileUploadData[section.key as keyof typeof fileUploadData] === item.id ? 'white' : '#475569',
-                      }}>{item.icon} {item.name}</button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowFileUpload(false)} style={modernStyles.buttonSecondary}>ביטול</button>
-                <button onClick={uploadProjectFile} disabled={uploadingFile} style={{ ...modernStyles.buttonPrimary, backgroundColor: '#10b981' }}>
-                  {uploadingFile ? 'מעלה...' : '✓ העלה'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Preview Modal */}
-        {previewFile && (
-          <div onClick={() => setPreviewFile(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
-            <div style={{ color: 'white', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '16px', fontWeight: '500' }}>{previewFile.file_name}</span>
-              <a href={previewFile.file_url} download target="_blank" onClick={(e) => e.stopPropagation()} style={{ ...modernStyles.buttonPrimary, textDecoration: 'none' }}>⬇️ הורד</a>
-              <button onClick={() => setPreviewFile(null)} style={{ ...modernStyles.buttonPrimary, backgroundColor: '#ef4444' }}>✕ סגור</button>
-            </div>
-            <div onClick={(e) => e.stopPropagation()} style={{ width: '90%', height: '80%', backgroundColor: 'white', borderRadius: '12px', overflow: 'hidden' }}>
-              {['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(previewFile.file_type?.toLowerCase()) ? (
-                <img src={previewFile.file_url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-              ) : previewFile.file_type?.toLowerCase() === 'pdf' ? (
-                <iframe src={previewFile.file_url} style={{ width: '100%', height: '100%', border: 'none' }} />
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: '20px' }}>
-                  <span style={{ fontSize: '64px' }}>{getFileIcon(previewFile.file_type)}</span>
-                  <p style={{ color: '#64748b' }}>אין תצוגה מקדימה</p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Team Modal */}
-        {showTeamModal && (
-          <div onClick={() => { setShowTeamModal(false); setGeneratedLink(null) }} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-            <div onClick={(e) => e.stopPropagation()} style={{ ...modernStyles.card, width: '90%', maxWidth: '450px', maxHeight: '80vh', overflow: 'auto', padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>👥 ניהול צוות</h2>
-                <button onClick={() => { setShowTeamModal(false); setGeneratedLink(null) }} style={modernStyles.buttonGhost}>×</button>
-              </div>
-              
-              <div style={{ marginBottom: '20px' }}>
-                <h4 style={{ margin: '0 0 10px', color: '#64748b', fontSize: '12px', fontWeight: '600' }}>בעלים</h4>
-                <div style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '18px' }}>🔑</span>
-                  <span style={{ flex: 1, fontWeight: '500', fontSize: '14px' }}>{profiles[project.owner_id]?.full_name || user?.email}</span>
-                </div>
-              </div>
-              
-              <div style={{ marginBottom: '20px' }}>
-                <h4 style={{ margin: '0 0 10px', color: '#64748b', fontSize: '12px', fontWeight: '600' }}>חברי צוות ({teamMembers.length})</h4>
-                {teamMembers.length === 0 ? (
-                  <p style={{ color: '#94a3b8', textAlign: 'center', padding: '20px', fontSize: '13px' }}>אין חברי צוות</p>
-                ) : (
-                  teamMembers.map((member) => (
-                    <div key={member.id} style={{ padding: '12px', backgroundColor: '#f8fafc', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '18px' }}>{ROLES[member.role]?.icon}</span>
-                      <span style={{ flex: 1, fontWeight: '500', fontSize: '14px' }}>{profiles[member.user_id]?.full_name || 'משתמש'}</span>
-                      <select value={member.role} onChange={(e) => updateMemberRole(member.id, e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e5e7eb', fontSize: '12px' }}>
-                        <option value="admin">👑 מנהל</option>
-                        <option value="member">👷 חבר</option>
-                        <option value="viewer">👁️ צופה</option>
-                      </select>
-                      <button onClick={() => removeMember(member.id)} style={{ ...modernStyles.chip, backgroundColor: '#fef2f2', color: '#ef4444' }}>הסר</button>
-                    </div>
-                  ))
-                )}
-              </div>
-              
-              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '10px' }}>
-                <h4 style={{ margin: '0 0 12px', fontSize: '14px', fontWeight: '600' }}>➕ הזמן לפרויקט</h4>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <input type="text" placeholder="טלפון או אימייל..." value={inviteContact} onChange={(e) => { setInviteContact(e.target.value); setGeneratedLink(null) }} style={{ ...modernStyles.input, flex: 1, minWidth: '150px' }} />
-                  <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} style={{ padding: '10px', border: '1px solid #e5e7eb', borderRadius: '8px', fontSize: '13px' }}>
-                    <option value="admin">👑 מנהל</option>
-                    <option value="member">👷 חבר</option>
-                    <option value="viewer">👁️ צופה</option>
-                  </select>
-                  <button onClick={createInvitation} disabled={!inviteContact.trim() || inviting} style={{ ...modernStyles.buttonPrimary, opacity: inviteContact.trim() ? 1 : 0.5 }}>
-                    {inviting ? '...' : 'הזמן'}
-                  </button>
-                </div>
-                
-                {generatedLink && (
-                  <div style={{ marginTop: '14px', padding: '14px', backgroundColor: 'white', borderRadius: '8px', border: '2px solid #6366F1' }}>
-                    <p style={{ margin: '0 0 10px', fontSize: '13px', fontWeight: '600', color: '#6366F1' }}>🔗 לינק נוצר!</p>
-                    <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-                      <input type="text" value={generatedLink} readOnly style={{ ...modernStyles.input, flex: 1, fontSize: '11px', direction: 'ltr' }} />
-                      <button onClick={copyLink} style={modernStyles.buttonSecondary}>📋</button>
-                    </div>
-                    <button onClick={shareWhatsApp} style={{ ...modernStyles.buttonPrimary, width: '100%', backgroundColor: '#25D366' }}>📱 שלח ב-WhatsApp</button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Image Viewer */}
-        {viewingImage && (
-          <div onClick={() => setViewingImage(null)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, cursor: 'pointer' }}>
-            <img src={viewingImage} style={{ maxWidth: '90%', maxHeight: '90%', borderRadius: '8px' }} />
-          </div>
-        )}
-
-        {/* Toast */}
-        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-      </div>
-    </>
   )
 }

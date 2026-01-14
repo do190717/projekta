@@ -246,7 +246,7 @@ export default function CashFlowPage() {
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
       <Sidebar projectName={project.name} />
 
-      <div style={{ 
+      <div className="cash-flow-container" style={{ 
         marginRight: '260px',
         flex: 1,
         padding: '32px',
@@ -260,11 +260,13 @@ export default function CashFlowPage() {
           maxWidth: '1400px'
         }}>
         {/* Header */}
-        <div style={{ 
+        <div className="cash-flow-header" style={{ 
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'center',
-          marginBottom: '32px'
+          marginBottom: '32px',
+          flexWrap: 'wrap',
+          gap: '16px',
         }}>
           <div>
             <h1 style={{ 
@@ -299,7 +301,7 @@ export default function CashFlowPage() {
         </div>
 
         {/* Top Row - 3 Small Cards */}
-        <div style={{
+        <div className="top-cards-grid" style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
           gap: '16px',
@@ -318,6 +320,8 @@ export default function CashFlowPage() {
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '8px',
             }}>
               <h4 style={{
                 margin: 0,
@@ -351,7 +355,7 @@ export default function CashFlowPage() {
                   </span>
                 </div>
               )}
-              </div>
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: '12px', color: '#64748b' }}>הכנסות</span>
@@ -514,7 +518,7 @@ export default function CashFlowPage() {
         </div>
 
         {/* Main Stats - 4 Big Cards */}
-        <div style={{
+        <div className="main-stats-grid" style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(4, 1fr)',
           gap: '20px',
@@ -675,17 +679,19 @@ export default function CashFlowPage() {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '16px',
+                    flexWrap: 'wrap',
                   }}>
                     <div style={{ fontSize: '32px' }}>
                       {item.cash_flow_categories?.icon || (isIncome ? '💰' : '💸')}
                     </div>
                     
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: '200px' }}>
                       <div style={{ 
                         display: 'flex', 
                         alignItems: 'center', 
                         gap: '8px',
                         marginBottom: '4px',
+                        flexWrap: 'wrap',
                       }}>
                         <span style={{ 
                           fontSize: '16px', 
@@ -749,6 +755,7 @@ export default function CashFlowPage() {
                         gap: '12px',
                         fontSize: '12px',
                         color: '#64748b',
+                        flexWrap: 'wrap',
                       }}>
                         <span>{item.cash_flow_categories?.name}</span>
                         <span>•</span>
@@ -781,7 +788,7 @@ export default function CashFlowPage() {
         </div>
       </div>
 
-      {/* Add Modal - IDENTICAL TO ORIGINAL */}
+      {/* Add Modal - SAME AS BEFORE */}
       {showAddModal && (
         <div 
           onClick={() => setShowAddModal(false)}
@@ -808,6 +815,8 @@ export default function CashFlowPage() {
               width: '90%',
               maxWidth: '500px',
               boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
+              maxHeight: '90vh',
+              overflowY: 'auto',
             }}
           >
             <h2 style={{ 
@@ -830,7 +839,7 @@ export default function CashFlowPage() {
                 }}>
                   סוג התנועה
                 </label>
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
                   {[
                     { value: 'income', label: '💰 הכנסה' },
                     { value: 'expense', label: '💸 הוצאה' },
@@ -842,7 +851,6 @@ export default function CashFlowPage() {
                       type="button"
                       onClick={() => setFormData({ ...formData, type: type.value, category_id: '' })}
                       style={{
-                        flex: 1,
                         padding: '12px',
                         backgroundColor: formData.type === type.value ? '#EFF6FF' : 'white',
                         border: `2px solid ${formData.type === type.value ? '#6366F1' : '#e5e7eb'}`,
@@ -983,7 +991,7 @@ export default function CashFlowPage() {
                 }}>
                   סטטוס
                 </label>
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                   {[
                     { value: 'paid', label: '✅ שולם', show: true },
                     { value: 'pending', label: '⏳ צפוי', show: true },
@@ -995,6 +1003,7 @@ export default function CashFlowPage() {
                       onClick={() => setFormData({ ...formData, status: status.value })}
                       style={{
                         flex: 1,
+                        minWidth: '120px',
                         padding: '12px',
                         backgroundColor: formData.status === status.value ? '#EFF6FF' : 'white',
                         border: `2px solid ${formData.status === status.value ? '#6366F1' : '#e5e7eb'}`,
@@ -1083,6 +1092,60 @@ export default function CashFlowPage() {
           to {
             transform: translateY(0);
             opacity: 1;
+          }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+          .main-stats-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .cash-flow-container {
+            margin-right: 0 !important;
+            padding: 16px !important;
+          }
+
+          .cash-flow-header {
+            flex-direction: column;
+            align-items: flex-start !important;
+          }
+
+          .cash-flow-header button {
+            width: 100%;
+          }
+
+          .top-cards-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .main-stats-grid {
+            grid-template-columns: 1fr !important;
+            gap: 16px !important;
+          }
+
+          .main-stats-grid > div {
+            padding: 20px !important;
+          }
+
+          .main-stats-grid > div > div:first-child {
+            font-size: 40px !important;
+          }
+
+          .main-stats-grid > div > div:nth-child(2) {
+            font-size: 28px !important;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .cash-flow-header h1 {
+            font-size: 24px !important;
+          }
+
+          .cash-flow-header p {
+            font-size: 14px !important;
           }
         }
       `}</style>

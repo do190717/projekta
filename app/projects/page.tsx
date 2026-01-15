@@ -85,36 +85,51 @@ export default function ProjectsPage() {
       fontFamily: 'Heebo, sans-serif',
       direction: 'rtl',
     }}>
-      {/* Header - Mobile Centered */}
+      {/* Header - Title with Back Button on Side */}
       <div style={{ 
         marginBottom: isMobile ? '32px' : '40px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '12px',
       }}>
-        {/* Title - Always Centered on Mobile */}
         <h1 style={{
-          fontSize: isMobile ? '32px' : '36px',
+          fontSize: isMobile ? '28px' : '36px',
           fontWeight: '700',
-          margin: '0 0 16px 0',
+          margin: 0,
           color: '#1e293b',
-          textAlign: isMobile ? 'center' : 'right',
         }}>
-          📂 הפרויקטים שלי
+          🏗️ הפרויקטים שלי
         </h1>
         
-        {/* Back Link - Centered on Mobile */}
+        {/* Back Button - Small Box on Side */}
         <a 
           href="/" 
           style={{ 
+            padding: '10px 16px',
+            backgroundColor: '#f1f5f9',
             color: '#6366F1',
             textDecoration: 'none',
-            fontSize: isMobile ? '16px' : '16px',
+            fontSize: '14px',
             fontWeight: '600',
-            display: isMobile ? 'block' : 'inline-flex',
-            textAlign: isMobile ? 'center' : 'right',
+            borderRadius: '10px',
+            border: '2px solid #e5e7eb',
+            display: 'flex',
             alignItems: 'center',
             gap: '6px',
+            whiteSpace: 'nowrap',
+            transition: 'all 0.2s',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = '#EFF6FF'
+            e.currentTarget.style.borderColor = '#6366F1'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = '#f1f5f9'
+            e.currentTarget.style.borderColor = '#e5e7eb'
           }}
         >
-          ← חזרה לדף הבית
+          ← חזרה
         </a>
       </div>
 
@@ -222,9 +237,8 @@ export default function ProjectsPage() {
                 backgroundColor: 'white',
                 borderRadius: '16px',
                 display: 'flex',
-                flexDirection: isMobile ? 'column' : 'row',
                 justifyContent: 'space-between',
-                alignItems: isMobile ? 'stretch' : 'center',
+                alignItems: 'center',
                 boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
                 border: '2px solid #f1f5f9',
                 transition: 'all 0.2s',
@@ -239,6 +253,7 @@ export default function ProjectsPage() {
                 e.currentTarget.style.borderColor = '#f1f5f9'
               }}
             >
+              {/* Project Name - Takes Most Space */}
               <a 
                 href={`/projects/${project.id}`}
                 style={{ 
@@ -252,32 +267,38 @@ export default function ProjectsPage() {
                   gap: '12px',
                 }}
               >
-                <span style={{ fontSize: '24px' }}>📁</span>
+                <span style={{ fontSize: '24px' }}>🏗️</span>
                 {project.name}
               </a>
+              
+              {/* Delete Button - Small Box on Side */}
               <button
                 onClick={() => deleteProject(project.id)}
                 style={{
-                  padding: '14px 24px',
-                  backgroundColor: '#EF4444',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '12px',
+                  padding: '10px 16px',
+                  backgroundColor: '#FEE2E2',
+                  color: '#EF4444',
+                  border: '2px solid #FECACA',
+                  borderRadius: '10px',
                   cursor: 'pointer',
-                  fontSize: '15px',
+                  fontSize: '14px',
                   fontWeight: '700',
                   fontFamily: 'Heebo, sans-serif',
                   transition: 'all 0.2s',
                   whiteSpace: 'nowrap',
-                  width: isMobile ? '100%' : 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#DC2626'
-                  e.currentTarget.style.transform = 'scale(1.02)'
+                  e.currentTarget.style.backgroundColor = '#EF4444'
+                  e.currentTarget.style.color = 'white'
+                  e.currentTarget.style.borderColor = '#EF4444'
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#EF4444'
-                  e.currentTarget.style.transform = 'scale(1)'
+                  e.currentTarget.style.backgroundColor = '#FEE2E2'
+                  e.currentTarget.style.color = '#EF4444'
+                  e.currentTarget.style.borderColor = '#FECACA'
                 }}
               >
                 🗑️ מחק

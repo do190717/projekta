@@ -1,8 +1,8 @@
 'use client'
 
 import { useIsMobile } from '@/hooks/useIsMobile'
-import CashFlowDesktop from './cashflowdesktop'
-import CashFlowMobile from './cashflowmobile'   
+import CashFlowDesktop from './CashFlowDesktop'  // ✅
+import CashFlowMobile from './CashFlowMobile'    // ✅
 /**
  * דף תזרים מזומנים - נקודת כניסה ראשית
  * מחליט בין תצוגת Desktop למובייל

@@ -275,20 +275,20 @@ export default function ProjectsPage() {
               <button
                 onClick={() => deleteProject(project.id)}
                 style={{
-                  padding: '10px 16px',
+                  padding: '8px 12px',
                   backgroundColor: '#FEE2E2',
                   color: '#EF4444',
                   border: '2px solid #FECACA',
-                  borderRadius: '10px',
+                  borderRadius: '8px',
                   cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: '700',
+                  fontSize: '13px',
+                  fontWeight: '600',
                   fontFamily: 'Heebo, sans-serif',
                   transition: 'all 0.2s',
                   whiteSpace: 'nowrap',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
+                  gap: '4px',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = '#EF4444'

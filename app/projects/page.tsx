@@ -78,43 +78,43 @@ export default function ProjectsPage() {
 
   return (
     <div style={{ 
-      padding: isMobile ? '16px' : '50px',
+      padding: isMobile ? '20px' : '50px',
       maxWidth: '800px',
       margin: '0 auto',
       minHeight: '100vh',
       fontFamily: 'Heebo, sans-serif',
       direction: 'rtl',
     }}>
-      {/* Header */}
+      {/* Header - Mobile Centered */}
       <div style={{ 
-        display: 'flex',
-        flexDirection: isMobile ? 'column' : 'row',
-        justifyContent: 'space-between',
-        alignItems: isMobile ? 'start' : 'center',
-        marginBottom: isMobile ? '24px' : '30px',
-        gap: isMobile ? '12px' : '0',
+        marginBottom: isMobile ? '32px' : '40px',
       }}>
+        {/* Title - Always Centered on Mobile */}
         <h1 style={{
-          fontSize: isMobile ? '28px' : '36px',
+          fontSize: isMobile ? '32px' : '36px',
           fontWeight: '700',
-          margin: 0,
+          margin: '0 0 16px 0',
           color: '#1e293b',
+          textAlign: isMobile ? 'center' : 'right',
         }}>
           📂 הפרויקטים שלי
         </h1>
+        
+        {/* Back Link - Centered on Mobile */}
         <a 
           href="/" 
           style={{ 
             color: '#6366F1',
             textDecoration: 'none',
-            fontSize: isMobile ? '14px' : '16px',
-            fontWeight: '500',
-            display: 'flex',
+            fontSize: isMobile ? '16px' : '16px',
+            fontWeight: '600',
+            display: isMobile ? 'block' : 'inline-flex',
+            textAlign: isMobile ? 'center' : 'right',
             alignItems: 'center',
-            gap: '4px',
+            gap: '6px',
           }}
         >
-          → חזרה לדף הבית
+          ← חזרה לדף הבית
         </a>
       </div>
 
@@ -122,10 +122,10 @@ export default function ProjectsPage() {
       <form 
         onSubmit={createProject} 
         style={{ 
-          marginBottom: isMobile ? '24px' : '30px',
+          marginBottom: isMobile ? '32px' : '30px',
           display: 'flex',
-          flexDirection: isMobile ? 'column' : 'row',
-          gap: isMobile ? '12px' : '10px',
+          flexDirection: 'column',
+          gap: '12px',
         }}
       >
         <input
@@ -134,14 +134,15 @@ export default function ProjectsPage() {
           value={newProjectName}
           onChange={(e) => setNewProjectName(e.target.value)}
           style={{
-            flex: 1,
-            padding: isMobile ? '14px 16px' : '12px',
+            width: '100%',
+            padding: '16px',
             border: '2px solid #e5e7eb',
-            borderRadius: isMobile ? '12px' : '8px',
+            borderRadius: '12px',
             fontSize: '16px',
             fontFamily: 'Heebo, sans-serif',
             outline: 'none',
             transition: 'border-color 0.2s',
+            boxSizing: 'border-box',
           }}
           onFocus={(e) => {
             e.currentTarget.style.borderColor = '#6366F1'
@@ -153,25 +154,23 @@ export default function ProjectsPage() {
         <button
           type="submit"
           style={{
-            padding: isMobile ? '14px 24px' : '12px 24px',
+            width: '100%',
+            padding: '16px',
             backgroundColor: '#6366F1',
             color: 'white',
             border: 'none',
-            borderRadius: isMobile ? '12px' : '8px',
+            borderRadius: '12px',
             cursor: 'pointer',
             fontSize: '16px',
-            fontWeight: '600',
+            fontWeight: '700',
             fontFamily: 'Heebo, sans-serif',
             transition: 'all 0.2s',
-            whiteSpace: 'nowrap',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.backgroundColor = '#4F46E5'
-            e.currentTarget.style.transform = 'translateY(-1px)'
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.backgroundColor = '#6366F1'
-            e.currentTarget.style.transform = 'translateY(0)'
           }}
         >
           ➕ צור פרויקט
@@ -184,18 +183,18 @@ export default function ProjectsPage() {
           textAlign: 'center',
           padding: isMobile ? '60px 20px' : '80px 40px',
           backgroundColor: 'white',
-          borderRadius: isMobile ? '16px' : '12px',
+          borderRadius: '16px',
           border: '2px dashed #e5e7eb',
         }}>
           <p style={{ 
-            fontSize: isMobile ? '48px' : '64px',
+            fontSize: '64px',
             margin: '0 0 16px 0',
           }}>
             📋
           </p>
           <p style={{ 
             color: '#64748b',
-            fontSize: isMobile ? '16px' : '18px',
+            fontSize: '18px',
             margin: '0 0 8px 0',
             fontWeight: '600',
           }}>
@@ -203,7 +202,7 @@ export default function ProjectsPage() {
           </p>
           <p style={{ 
             color: '#94a3b8',
-            fontSize: isMobile ? '14px' : '15px',
+            fontSize: '15px',
             margin: 0,
           }}>
             צור את הפרויקט הראשון שלך למעלה!
@@ -213,31 +212,30 @@ export default function ProjectsPage() {
         <div style={{ 
           display: 'flex',
           flexDirection: 'column',
-          gap: isMobile ? '12px' : '10px',
+          gap: '16px',
         }}>
           {projects.map((project) => (
             <div
               key={project.id}
               style={{
-                padding: isMobile ? '16px' : '15px 20px',
+                padding: '20px',
                 backgroundColor: 'white',
-                borderRadius: isMobile ? '12px' : '8px',
+                borderRadius: '16px',
                 display: 'flex',
+                flexDirection: isMobile ? 'column' : 'row',
                 justifyContent: 'space-between',
-                alignItems: 'center',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                border: '1px solid #f1f5f9',
+                alignItems: isMobile ? 'stretch' : 'center',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                border: '2px solid #f1f5f9',
                 transition: 'all 0.2s',
-                gap: isMobile ? '12px' : '16px',
+                gap: '16px',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'
-                e.currentTarget.style.transform = 'translateY(-2px)'
+                e.currentTarget.style.boxShadow = '0 4px 16px rgba(99,102,241,0.15)'
                 e.currentTarget.style.borderColor = '#6366F1'
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)'
-                e.currentTarget.style.transform = 'translateY(0)'
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'
                 e.currentTarget.style.borderColor = '#f1f5f9'
               }}
             >
@@ -248,35 +246,38 @@ export default function ProjectsPage() {
                   color: '#1e293b',
                   textDecoration: 'none',
                   flex: 1,
-                  fontSize: isMobile ? '16px' : '15px',
+                  fontSize: '18px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
+                  gap: '12px',
                 }}
               >
-                <span style={{ fontSize: isMobile ? '20px' : '18px' }}>📁</span>
+                <span style={{ fontSize: '24px' }}>📁</span>
                 {project.name}
               </a>
               <button
                 onClick={() => deleteProject(project.id)}
                 style={{
-                  padding: isMobile ? '10px 16px' : '8px 16px',
+                  padding: '14px 24px',
                   backgroundColor: '#EF4444',
                   color: 'white',
                   border: 'none',
-                  borderRadius: isMobile ? '10px' : '6px',
+                  borderRadius: '12px',
                   cursor: 'pointer',
-                  fontSize: isMobile ? '14px' : '13px',
-                  fontWeight: '600',
+                  fontSize: '15px',
+                  fontWeight: '700',
                   fontFamily: 'Heebo, sans-serif',
                   transition: 'all 0.2s',
                   whiteSpace: 'nowrap',
+                  width: isMobile ? '100%' : 'auto',
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = '#DC2626'
+                  e.currentTarget.style.transform = 'scale(1.02)'
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.backgroundColor = '#EF4444'
+                  e.currentTarget.style.transform = 'scale(1)'
                 }}
               >
                 🗑️ מחק
@@ -289,18 +290,20 @@ export default function ProjectsPage() {
       {/* Footer info */}
       {projects.length > 0 && (
         <div style={{
-          marginTop: isMobile ? '24px' : '32px',
-          padding: isMobile ? '16px' : '20px',
-          backgroundColor: '#f8fafc',
-          borderRadius: isMobile ? '12px' : '8px',
+          marginTop: '32px',
+          padding: '20px',
+          backgroundColor: '#EFF6FF',
+          borderRadius: '12px',
           textAlign: 'center',
+          border: '2px solid #DBEAFE',
         }}>
           <p style={{
             margin: 0,
-            color: '#64748b',
-            fontSize: isMobile ? '13px' : '14px',
+            color: '#1e40af',
+            fontSize: '15px',
+            fontWeight: '600',
           }}>
-            💡 יש לך <strong style={{ color: '#6366F1' }}>{projects.length}</strong> {projects.length === 1 ? 'פרויקט' : 'פרויקטים'} פעילים
+            💡 יש לך <strong style={{ color: '#6366F1', fontSize: '18px' }}>{projects.length}</strong> {projects.length === 1 ? 'פרויקט' : 'פרויקטים'} פעילים
           </p>
         </div>
       )}

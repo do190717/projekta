@@ -3,10 +3,14 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import AddPOModal from './components/AddPOModal'
+import POListModal from './components/POListModal'
+import MobileSidebar from '../components/MobileSidebar'
+import type { BudgetWithCommitted } from '@/types/budget'
 
 /**
  * דף תקציב - גרסת מובייל
- * ממוטב למסכים קטנים
+ * ממוטב למסכים קטנים עם כל הפיצ'רים החדשים
  */
 export default function BudgetMobile() {
   const params = useParams()
@@ -17,8 +21,15 @@ export default function BudgetMobile() {
   const [project, setProject] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [budgetSettings, setBudgetSettings] = useState<any>(null)
-  const [budgetData, setBudgetData] = useState<any[]>([])
+  const [budgetData, setBudgetData] = useState<BudgetWithCommitted[]>([])
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+  const [categories, setCategories] = useState<any[]>([])
+  
+  // Modals state
+  const [showAddPOModal, setShowAddPOModal] = useState(false)
+  const [showPOListModal, setShowPOListModal] = useState(false)
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>()
+  const [selectedCategoryName, setSelectedCategoryName] = useState<string | undefined>()
 
   useEffect(() => {
     loadData()
@@ -47,51 +58,29 @@ export default function BudgetMobile() {
         return
       }
 
-      const { data: categoryBudgetsData } = await supabase
-        .from('project_category_budgets')
-        .select(`
-          *,
-          cash_flow_categories (
-            name,
-            icon,
-            color,
-            type
-          )
-        `)
+      // Load categories for modals
+      const { data: categoriesData } = await supabase
+        .from('cash_flow_categories')
+        .select('id, name, icon')
+        .eq('type', 'expense')
+        .order('name')
+      
+      setCategories(categoriesData || [])
+
+      // ✨ Load budget data from view with committed costs
+      const { data: budgetViewData } = await supabase
+        .from('budget_with_committed_costs')
+        .select('*')
         .eq('project_id', projectId)
         .order('budgeted_amount', { ascending: false })
       
-      const budgetVsActualData = await Promise.all(
-        (categoryBudgetsData || []).map(async (budget) => {
-          const { data: cashFlowData } = await supabase
-            .from('cash_flow')
-            .select('amount')
-            .eq('project_id', projectId)
-            .eq('category_id', budget.category_id)
-            .in('type', ['expense', 'addition_expense'])
-            .eq('status', 'paid')
-          
-          const spent = cashFlowData?.reduce((sum, item) => sum + parseFloat(item.amount), 0) || 0
-          const remaining = parseFloat(budget.budgeted_amount) - spent
-          const percentage = budget.budgeted_amount > 0 ? (spent / budget.budgeted_amount * 100) : 0
-          
-          return {
-            project_id: budget.project_id,
-            category_id: budget.category_id,
-            category_name: budget.cash_flow_categories?.name || '',
-            icon: budget.cash_flow_categories?.icon || '📦',
-            color: budget.cash_flow_categories?.color || '#6366F1',
-            type: budget.cash_flow_categories?.type || 'expense',
-            budgeted_amount: budget.budgeted_amount,
-            spent_amount: spent,
-            remaining_amount: remaining,
-            percentage_used: percentage,
-          }
-        })
-      )
+      if (!budgetViewData) {
+        setBudgetData([])
+        return
+      }
       
       const dataWithTransactions = await Promise.all(
-        (budgetVsActualData || []).map(async (item) => {
+        budgetViewData.map(async (item) => {
           const { data: transactions } = await supabase
             .from('cash_flow')
             .select('*')
@@ -103,7 +92,7 @@ export default function BudgetMobile() {
           
           return {
             ...item,
-            recent_transactions: transactions || []
+            transactions: transactions || []
           }
         })
       )
@@ -126,12 +115,32 @@ export default function BudgetMobile() {
     setExpandedCategories(newExpanded)
   }
 
-  const totalBudgeted = budgetData.reduce((sum, item) => sum + parseFloat(item.budgeted_amount), 0)
-  const totalSpent = budgetData.reduce((sum, item) => sum + item.spent_amount, 0)
-  const totalRemaining = totalBudgeted - totalSpent
+  function openAddPOModal(categoryId?: string) {
+    setSelectedCategoryId(categoryId)
+    setShowAddPOModal(true)
+  }
 
-  const overBudgetCategories = budgetData.filter(item => item.percentage_used > 100)
-  const nearLimitCategories = budgetData.filter(item => item.percentage_used >= 85 && item.percentage_used <= 100)
+  function openPOListModal(categoryId?: string, categoryName?: string) {
+    setSelectedCategoryId(categoryId)
+    setSelectedCategoryName(categoryName)
+    setShowPOListModal(true)
+  }
+
+  function handlePOSuccess() {
+    loadData()
+  }
+
+  // Calculate totals
+  const totalBudgeted = budgetData.reduce((sum, item) => sum + Number(item.budgeted_amount || 0), 0)
+  const totalSpent = budgetData.reduce((sum, item) => sum + Number(item.spent_amount || 0), 0)
+  const totalCommitted = budgetData.reduce((sum, item) => sum + Number(item.committed_amount || 0), 0)
+  const totalAvailable = budgetData.reduce((sum, item) => sum + Number(item.available_amount || 0), 0)
+
+  const overBudgetCategories = budgetData.filter(item => Number(item.percentage_used) > 100)
+  const nearLimitCategories = budgetData.filter(item => {
+    const pct = Number(item.percentage_used)
+    return pct >= 85 && pct <= 100
+  })
 
   if (loading) {
     return (
@@ -157,29 +166,19 @@ export default function BudgetMobile() {
       direction: 'rtl',
       paddingBottom: '80px',
     }}>
+      {/* Mobile Sidebar */}
+      <MobileSidebar projectName={project.name} currentPage="budget" />
+
       {/* Header - Mobile */}
       <div style={{ 
         padding: '16px',
+        paddingRight: '64px', // Space for hamburger button
         backgroundColor: 'white',
         borderBottom: '1px solid #e5e7eb',
         position: 'sticky',
         top: 0,
         zIndex: 100,
       }}>
-        <button
-          onClick={() => router.back()}
-          style={{
-            padding: '8px',
-            backgroundColor: 'transparent',
-            border: 'none',
-            fontSize: '24px',
-            cursor: 'pointer',
-            marginBottom: '12px',
-          }}
-        >
-          ←
-        </button>
-        
         <h1 style={{ 
           fontSize: '24px', 
           fontWeight: '700', 
@@ -193,7 +192,7 @@ export default function BudgetMobile() {
         </p>
       </div>
 
-      {/* Overall Summary - Mobile */}
+      {/* Overall Summary - Mobile - UPDATED */}
       <div style={{ padding: '16px' }}>
         <div style={{
           padding: '20px',
@@ -224,7 +223,7 @@ export default function BudgetMobile() {
           {/* Total Spent */}
           <div style={{ marginBottom: '16px' }}>
             <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#64748b' }}>
-              בוצע עד כה
+              שולם
             </p>
             <p style={{ margin: 0, fontSize: '28px', fontWeight: '700', color: '#EF4444' }}>
               ₪{totalSpent.toLocaleString()}
@@ -234,25 +233,38 @@ export default function BudgetMobile() {
             </p>
           </div>
 
-          {/* Remaining */}
+          {/* Total Committed - NEW */}
           <div style={{ marginBottom: '16px' }}>
             <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#64748b' }}>
-              יתרה
+              מחויב
+            </p>
+            <p style={{ margin: 0, fontSize: '28px', fontWeight: '700', color: '#F59E0B' }}>
+              ₪{totalCommitted.toLocaleString()}
+            </p>
+            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748b' }}>
+              הזמנות שטרם שולמו
+            </p>
+          </div>
+
+          {/* Available - NEW */}
+          <div style={{ marginBottom: '16px' }}>
+            <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#64748b' }}>
+              זמין באמת
             </p>
             <p style={{ 
               margin: 0, 
               fontSize: '28px', 
               fontWeight: '700', 
-              color: totalRemaining >= 0 ? '#10B981' : '#EF4444' 
+              color: totalAvailable >= 0 ? '#10B981' : '#EF4444' 
             }}>
-              ₪{Math.abs(totalRemaining).toLocaleString()}
+              ₪{Math.abs(totalAvailable).toLocaleString()}
             </p>
             <p style={{ 
               margin: '4px 0 0 0', 
               fontSize: '12px', 
-              color: totalRemaining >= 0 ? '#10B981' : '#EF4444' 
+              color: totalAvailable >= 0 ? '#10B981' : '#EF4444' 
             }}>
-              {totalRemaining >= 0 ? 'בתקציב ✅' : 'חריגה ⚠️'}
+              {totalAvailable >= 0 ? 'פנוי להוצאה ✅' : 'חריגה ⚠️'}
             </p>
           </div>
 
@@ -268,11 +280,22 @@ export default function BudgetMobile() {
               overflow: 'hidden',
               position: 'relative',
             }}>
+              {/* Spent */}
               <div style={{
+                position: 'absolute',
                 height: '100%',
                 width: `${Math.min((totalSpent / totalBudgeted) * 100, 100)}%`,
-                backgroundColor: totalSpent > totalBudgeted ? '#EF4444' : '#10B981',
+                backgroundColor: '#EF4444',
                 transition: 'width 0.3s ease',
+              }} />
+              {/* Committed */}
+              <div style={{
+                position: 'absolute',
+                height: '100%',
+                left: `${Math.min((totalSpent / totalBudgeted) * 100, 100)}%`,
+                width: `${Math.min((totalCommitted / totalBudgeted) * 100, 100 - (totalSpent / totalBudgeted) * 100)}%`,
+                backgroundColor: '#F59E0B',
+                transition: 'width 0.3s ease, left 0.3s ease',
               }} />
               <span style={{
                 position: 'absolute',
@@ -282,11 +305,34 @@ export default function BudgetMobile() {
                 fontSize: '14px',
                 fontWeight: '700',
                 color: '#1e293b',
+                zIndex: 1,
               }}>
-                {totalBudgeted > 0 ? Math.round((totalSpent / totalBudgeted) * 100) : 0}%
+                {totalBudgeted > 0 ? Math.round(((totalSpent + totalCommitted) / totalBudgeted) * 100) : 0}%
               </span>
             </div>
           </div>
+
+          {/* View POs Button - NEW */}
+          {totalCommitted > 0 && (
+            <button
+              onClick={() => openPOListModal()}
+              style={{
+                marginTop: '16px',
+                padding: '12px',
+                backgroundColor: '#FEF3C7',
+                border: '2px solid #F59E0B',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                fontFamily: 'Heebo, sans-serif',
+                color: '#92400E',
+                width: '100%',
+              }}
+            >
+              📋 צפה בהזמנות פתוחות ({budgetData.filter(d => Number(d.committed_amount) > 0).length})
+            </button>
+          )}
         </div>
 
         {/* Alerts - Mobile */}
@@ -327,7 +373,7 @@ export default function BudgetMobile() {
                     color: '#991B1B',
                     marginBottom: '4px',
                   }}>
-                    {cat.icon} {cat.category_name}: חריגה של ₪{Math.abs(cat.remaining_amount).toLocaleString()}
+                    {cat.category_icon} {cat.category_name}: חריגה של ₪{(Number(cat.spent_amount) + Number(cat.committed_amount) - Number(cat.budgeted_amount)).toLocaleString()}
                   </div>
                 ))}
               </div>
@@ -352,7 +398,7 @@ export default function BudgetMobile() {
                     color: '#92400E',
                     marginBottom: '4px',
                   }}>
-                    {cat.icon} {cat.category_name}: נותרו ₪{cat.remaining_amount.toLocaleString()}
+                    {cat.category_icon} {cat.category_name}: נותרו ₪{Number(cat.available_amount).toLocaleString()}
                   </div>
                 ))}
               </div>
@@ -360,16 +406,18 @@ export default function BudgetMobile() {
           </div>
         )}
 
-        {/* Categories List - Mobile */}
+        {/* Categories List - Mobile - UPDATED */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {budgetData.map((item) => {
             const isExpanded = expandedCategories.has(item.category_id)
+            const percentageUsed = Number(item.percentage_used)
+            const hasCommitted = Number(item.committed_amount) > 0
             const statusColor = 
-              item.percentage_used > 100 ? '#EF4444' : 
-              item.percentage_used >= 85 ? '#F59E0B' : '#10B981'
+              percentageUsed > 100 ? '#EF4444' : 
+              percentageUsed >= 85 ? '#F59E0B' : '#10B981'
             const statusIcon = 
-              item.percentage_used > 100 ? '⚠️' : 
-              item.percentage_used >= 85 ? '⚡' : '✅'
+              percentageUsed > 100 ? '⚠️' : 
+              percentageUsed >= 85 ? '⚡' : '✅'
 
             return (
               <div 
@@ -379,7 +427,7 @@ export default function BudgetMobile() {
                   borderRadius: '12px',
                   overflow: 'hidden',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                  border: `2px solid ${item.percentage_used > 100 ? '#EF4444' : '#e5e7eb'}`,
+                  border: `2px solid ${percentageUsed > 100 ? '#EF4444' : '#e5e7eb'}`,
                 }}
               >
                 {/* Category Header */}
@@ -391,7 +439,7 @@ export default function BudgetMobile() {
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                    <div style={{ fontSize: '32px' }}>{item.icon}</div>
+                    <div style={{ fontSize: '32px' }}>{item.category_icon}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                         <h3 style={{ 
@@ -405,19 +453,24 @@ export default function BudgetMobile() {
                         <span style={{ fontSize: '18px' }}>{statusIcon}</span>
                       </div>
                       <div style={{ 
-                        fontSize: '13px', 
+                        fontSize: '12px', 
                         color: '#64748b',
                         display: 'flex',
-                        gap: '12px',
-                        flexWrap: 'wrap',
+                        flexDirection: 'column',
+                        gap: '4px',
                       }}>
-                        <span>
-                          תקציב: ₪{parseFloat(item.budgeted_amount).toLocaleString()}
-                        </span>
-                        <span>•</span>
-                        <span style={{ color: statusColor, fontWeight: '600' }}>
-                          בוצע: ₪{item.spent_amount.toLocaleString()}
-                        </span>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          <span>תקציב: ₪{Number(item.budgeted_amount).toLocaleString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ color: '#EF4444' }}>שולם: ₪{Number(item.spent_amount).toLocaleString()}</span>
+                          {hasCommitted && (
+                            <>
+                              <span>•</span>
+                              <span style={{ color: '#F59E0B' }}>מחויב: ₪{Number(item.committed_amount).toLocaleString()}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div style={{ fontSize: '20px', color: '#94a3b8' }}>
@@ -425,19 +478,31 @@ export default function BudgetMobile() {
                     </div>
                   </div>
 
-                  {/* Progress Bar */}
+                  {/* Progress Bar - UPDATED */}
                   <div style={{
                     height: '24px',
                     backgroundColor: '#E5E7EB',
                     borderRadius: '12px',
                     overflow: 'hidden',
                     position: 'relative',
+                    marginBottom: '8px',
                   }}>
+                    {/* Spent */}
                     <div style={{
+                      position: 'absolute',
                       height: '100%',
-                      width: `${Math.min(item.percentage_used, 100)}%`,
-                      backgroundColor: statusColor,
+                      width: `${Math.min(Number(item.percentage_spent), 100)}%`,
+                      backgroundColor: '#EF4444',
                       transition: 'width 0.3s ease',
+                    }} />
+                    {/* Committed */}
+                    <div style={{
+                      position: 'absolute',
+                      height: '100%',
+                      left: `${Math.min(Number(item.percentage_spent), 100)}%`,
+                      width: `${Math.min(Number(item.percentage_committed), 100 - Number(item.percentage_spent))}%`,
+                      backgroundColor: '#F59E0B',
+                      transition: 'width 0.3s ease, left 0.3s ease',
                     }} />
                     <span style={{
                       position: 'absolute',
@@ -447,31 +512,101 @@ export default function BudgetMobile() {
                       fontSize: '12px',
                       fontWeight: '700',
                       color: '#1e293b',
+                      zIndex: 1,
                     }}>
-                      {Math.round(item.percentage_used)}%
+                      {Math.round(percentageUsed)}%
                     </span>
                   </div>
 
-                  {/* Remaining */}
+                  {/* Available */}
                   <div style={{ 
-                    marginTop: '12px',
                     padding: '8px 12px',
-                    backgroundColor: item.remaining_amount >= 0 ? '#F0FDF4' : '#FEE2E2',
+                    backgroundColor: Number(item.available_amount) >= 0 ? '#F0FDF4' : '#FEE2E2',
                     borderRadius: '8px',
                     textAlign: 'center',
                   }}>
                     <span style={{ 
-                      fontSize: '14px', 
+                      fontSize: '13px', 
                       fontWeight: '600',
-                      color: item.remaining_amount >= 0 ? '#10B981' : '#EF4444',
+                      color: Number(item.available_amount) >= 0 ? '#10B981' : '#EF4444',
                     }}>
-                      {item.remaining_amount >= 0 ? 'נותר' : 'חריגה'}: ₪{Math.abs(item.remaining_amount).toLocaleString()}
+                      זמין: ₪{Number(item.available_amount).toLocaleString()}
                     </span>
                   </div>
                 </div>
 
+                {/* Quick Actions - NEW */}
+                {!isExpanded && (
+                  <div style={{
+                    padding: '0 16px 16px 16px',
+                    display: 'grid',
+                    gridTemplateColumns: hasCommitted ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)',
+                    gap: '8px',
+                  }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        router.push(`/projects/${projectId}/cash-flow`)
+                      }}
+                      style={{
+                        padding: '8px',
+                        backgroundColor: '#EFF6FF',
+                        border: '2px solid #DBEAFE',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        fontFamily: 'Heebo, sans-serif',
+                        color: '#1E40AF',
+                      }}
+                    >
+                      ➕
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openAddPOModal(item.category_id)
+                      }}
+                      style={{
+                        padding: '8px',
+                        backgroundColor: '#FEF3C7',
+                        border: '2px solid #FDE68A',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        cursor: 'pointer',
+                        fontFamily: 'Heebo, sans-serif',
+                        color: '#92400E',
+                      }}
+                    >
+                      📋
+                    </button>
+                    {hasCommitted && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openPOListModal(item.category_id, item.category_name)
+                        }}
+                        style={{
+                          padding: '8px',
+                          backgroundColor: '#F3F4F6',
+                          border: '2px solid #E5E7EB',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          fontFamily: 'Heebo, sans-serif',
+                          color: '#374151',
+                        }}
+                      >
+                        👁️
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {/* Expanded - Recent Transactions */}
-                {isExpanded && item.recent_transactions && item.recent_transactions.length > 0 && (
+                {isExpanded && (item.transactions as any[]).length > 0 && (
                   <div style={{
                     padding: '16px',
                     backgroundColor: '#f8fafc',
@@ -485,14 +620,14 @@ export default function BudgetMobile() {
                     }}>
                       תנועות אחרונות:
                     </h4>
-                    {item.recent_transactions.map((transaction: any, idx: number) => (
+                    {(item.transactions as any[]).map((transaction: any, idx: number) => (
                       <div 
                         key={idx}
                         style={{
                           padding: '12px',
                           backgroundColor: 'white',
                           borderRadius: '8px',
-                          marginBottom: idx < item.recent_transactions.length - 1 ? '8px' : 0,
+                          marginBottom: idx < (item.transactions as any[]).length - 1 ? '8px' : 0,
                         }}
                       >
                         <div style={{ 
@@ -520,6 +655,116 @@ export default function BudgetMobile() {
                         </div>
                       </div>
                     ))}
+                    
+                    {/* Actions in expanded */}
+                    <div style={{
+                      marginTop: '12px',
+                      display: 'grid',
+                      gridTemplateColumns: hasCommitted ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)',
+                      gap: '8px',
+                    }}>
+                      <button
+                        onClick={() => router.push(`/projects/${projectId}/cash-flow`)}
+                        style={{
+                          padding: '10px',
+                          backgroundColor: '#EFF6FF',
+                          border: '2px solid #DBEAFE',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          fontFamily: 'Heebo, sans-serif',
+                          color: '#1E40AF',
+                        }}
+                      >
+                        ➕ הוצאה
+                      </button>
+                      <button
+                        onClick={() => openAddPOModal(item.category_id)}
+                        style={{
+                          padding: '10px',
+                          backgroundColor: '#FEF3C7',
+                          border: '2px solid #FDE68A',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          fontFamily: 'Heebo, sans-serif',
+                          color: '#92400E',
+                        }}
+                      >
+                        📋 הזמנה
+                      </button>
+                      {hasCommitted && (
+                        <button
+                          onClick={() => openPOListModal(item.category_id, item.category_name)}
+                          style={{
+                            padding: '10px',
+                            backgroundColor: '#F3F4F6',
+                            border: '2px solid #E5E7EB',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            fontFamily: 'Heebo, sans-serif',
+                            color: '#374151',
+                          }}
+                        >
+                          👁️ POs
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {isExpanded && (item.transactions as any[]).length === 0 && (
+                  <div style={{
+                    padding: '16px',
+                    backgroundColor: '#f8fafc',
+                    borderTop: '1px solid #e5e7eb',
+                    textAlign: 'center',
+                  }}>
+                    <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#64748b' }}>
+                      אין תנועות בסעיף זה
+                    </p>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, 1fr)',
+                      gap: '8px',
+                    }}>
+                      <button
+                        onClick={() => router.push(`/projects/${projectId}/cash-flow`)}
+                        style={{
+                          padding: '10px',
+                          backgroundColor: '#6366F1',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          fontFamily: 'Heebo, sans-serif',
+                        }}
+                      >
+                        ➕ הוצאה
+                      </button>
+                      <button
+                        onClick={() => openAddPOModal(item.category_id)}
+                        style={{
+                          padding: '10px',
+                          backgroundColor: '#F59E0B',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          fontFamily: 'Heebo, sans-serif',
+                        }}
+                      >
+                        📋 הזמנה
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -528,7 +773,7 @@ export default function BudgetMobile() {
         </div>
       </div>
 
-      {/* Floating Action Buttons - Mobile */}
+      {/* Floating Action Buttons - Mobile - UPDATED */}
       <div style={{
         position: 'fixed',
         bottom: '20px',
@@ -537,9 +782,27 @@ export default function BudgetMobile() {
         width: 'calc(100% - 32px)',
         maxWidth: '400px',
         display: 'flex',
-        gap: '12px',
+        gap: '8px',
         zIndex: 50,
       }}>
+        <button
+          onClick={() => openAddPOModal()}
+          style={{
+            flex: 1,
+            padding: '14px',
+            backgroundColor: '#F59E0B',
+            color: 'white',
+            border: 'none',
+            borderRadius: '12px',
+            fontSize: '14px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            fontFamily: 'Heebo, sans-serif',
+            boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+          }}
+        >
+          📋 PO
+        </button>
         <button
           onClick={() => router.push(`/projects/${projectId}/budget/setup`)}
           style={{
@@ -556,7 +819,7 @@ export default function BudgetMobile() {
             boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
           }}
         >
-          ⚙️ ערוך
+          ⚙️
         </button>
         <button
           onClick={() => router.push(`/projects/${projectId}/cash-flow`)}
@@ -574,9 +837,37 @@ export default function BudgetMobile() {
             boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
           }}
         >
-          💰 תזרים
+          💰
         </button>
       </div>
+
+      {/* Modals */}
+      {showAddPOModal && (
+        <AddPOModal
+          projectId={projectId}
+          categoryId={selectedCategoryId}
+          categories={categories}
+          onClose={() => {
+            setShowAddPOModal(false)
+            setSelectedCategoryId(undefined)
+          }}
+          onSuccess={handlePOSuccess}
+        />
+      )}
+
+      {showPOListModal && (
+        <POListModal
+          projectId={projectId}
+          categoryId={selectedCategoryId}
+          categoryName={selectedCategoryName}
+          onClose={() => {
+            setShowPOListModal(false)
+            setSelectedCategoryId(undefined)
+            setSelectedCategoryName(undefined)
+          }}
+          onUpdate={loadData}
+        />
+      )}
     </div>
   )
 }

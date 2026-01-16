@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { UPDATE_STATUSES } from '@/lib/constants'
+import MobileSidebar from './components/MobileSidebar'
 
 /**
  * Dashboard - גרסת מובייל
@@ -215,29 +216,32 @@ export default function DashboardMobile() {
       direction: 'rtl',
       paddingBottom: '80px',
     }}>
+      {/* TEST - If you see this, the file is loaded */}
+      <div style={{ 
+        position: 'fixed', 
+        top: '100px', 
+        right: '10px', 
+        background: 'red', 
+        color: 'white', 
+        padding: '10px',
+        zIndex: 9999 
+      }}>
+        TEST - FILE LOADED
+      </div>
+
+      {/* Mobile Sidebar */}
+      <MobileSidebar projectName={project.name} currentPage="dashboard" />
+
       {/* Header - Mobile */}
       <div style={{ 
         padding: '16px',
+        paddingRight: '64px', // Space for hamburger button
         backgroundColor: 'white',
         borderBottom: '1px solid #e5e7eb',
         position: 'sticky',
         top: 0,
         zIndex: 100,
       }}>
-        <button
-          onClick={() => router.push('/projects')}
-          style={{
-            padding: '8px',
-            backgroundColor: 'transparent',
-            border: 'none',
-            fontSize: '24px',
-            cursor: 'pointer',
-            marginBottom: '12px',
-          }}
-        >
-          ←
-        </button>
-        
         <h1 style={{ 
           fontSize: '24px', 
           fontWeight: '700', 
@@ -284,11 +288,12 @@ export default function DashboardMobile() {
             onClick={() => router.push(`/projects/${projectId}/files`)}
           />
           <StatCardMobile
-            icon="💰"
-            title="תזרים"
-            value="בקרוב"
-            subtitle="ממתין"
-            color="#F59E0B"
+            icon="📊"
+            title="תקציב"
+            value="✓"
+            subtitle="מעקב"
+            color="#6366F1"
+            onClick={() => router.push(`/projects/${projectId}/budget`)}
           />
         </div>
 
@@ -322,8 +327,8 @@ export default function DashboardMobile() {
               onClick={() => router.push(`/projects/${projectId}/files`)}
             />
             <QuickActionButtonMobile
-              label="👥 נהל צוות"
-              onClick={() => router.push(`/projects/${projectId}/updates`)}
+              label="📊 צפה בתקציב"
+              onClick={() => router.push(`/projects/${projectId}/budget`)}
             />
           </div>
         </div>
@@ -544,7 +549,7 @@ export default function DashboardMobile() {
             עוד פיצ'רים בדרך!
           </h3>
           <p style={{ color: '#64748b', fontSize: '13px', lineHeight: '1.6' }}>
-            תזרים מזומנים • ניהול כוח אדם • לוחות זמנים
+            ניהול כוח אדם • לוחות זמנים • דוחות מתקדמים
           </p>
         </div>
       </div>

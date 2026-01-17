@@ -10,6 +10,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import Toast from '../../../Toast'
+import MobileSidebar from '../components/MobileSidebar'
 
 // ===========================================
 // HOOKS
@@ -480,11 +481,17 @@ export default function FilesPage() {
 
       <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', fontFamily: 'Heebo, sans-serif' }}>
         
+        {/* Mobile Sidebar */}
+        {isMobile && project && (
+          <MobileSidebar projectName={project.name} currentPage="files" />
+        )}
+        
         {/* Header */}
         <div style={{ 
           background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
           color: 'white', 
           padding: isMobile ? '12px 16px' : '16px 24px',
+          paddingRight: isMobile ? '64px' : '24px',
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'center', 
@@ -493,11 +500,13 @@ export default function FilesPage() {
           boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '16px', flex: 1, minWidth: 0 }}>
-            <a href={`/projects/${projectId}`} style={{ 
-              color: 'white', textDecoration: 'none', fontSize: '20px',
-              width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              borderRadius: '10px', backgroundColor: 'rgba(255,255,255,0.15)',
-            }}>←</a>
+            {!isMobile && (
+              <a href={`/projects/${projectId}`} style={{ 
+                color: 'white', textDecoration: 'none', fontSize: '20px',
+                width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: '10px', backgroundColor: 'rgba(255,255,255,0.15)',
+              }}>←</a>
+            )}
             <div style={{ flex: 1, minWidth: 0 }}>
               <h1 style={{ margin: 0, fontSize: isMobile ? '16px' : '20px', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 📁 קבצים ותכניות

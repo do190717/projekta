@@ -216,18 +216,6 @@ export default function DashboardMobile() {
       direction: 'rtl',
       paddingBottom: '80px',
     }}>
-      {/* TEST - If you see this, the file is loaded */}
-      <div style={{ 
-        position: 'fixed', 
-        top: '100px', 
-        right: '10px', 
-        background: 'red', 
-        color: 'white', 
-        padding: '10px',
-        zIndex: 9999 
-      }}>
-        TEST - FILE LOADED
-      </div>
 
       {/* Mobile Sidebar */}
       <MobileSidebar projectName={project.name} currentPage="dashboard" />

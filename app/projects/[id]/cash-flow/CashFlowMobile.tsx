@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
+import MobileSidebar from '../components/MobileSidebar'
 
 /**
  * דף תזרים מזומנים - גרסת מובייל
@@ -253,29 +254,19 @@ export default function CashFlowMobile() {
       direction: 'rtl',
       paddingBottom: '80px',
     }}>
+      {/* Mobile Sidebar */}
+      <MobileSidebar projectName={project.name} currentPage="cash-flow" />
+
       {/* Header - Mobile Optimized */}
       <div style={{ 
         padding: '16px',
+        paddingRight: '64px', // Space for hamburger button
         backgroundColor: 'white',
         borderBottom: '1px solid #e5e7eb',
         position: 'sticky',
         top: 0,
         zIndex: 100,
       }}>
-        <button
-          onClick={() => router.back()}
-          style={{
-            padding: '8px',
-            backgroundColor: 'transparent',
-            border: 'none',
-            fontSize: '24px',
-            cursor: 'pointer',
-            marginBottom: '12px',
-          }}
-        >
-          ←
-        </button>
-        
         <h1 style={{ 
           fontSize: '24px', 
           fontWeight: '700', 

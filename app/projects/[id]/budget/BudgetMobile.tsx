@@ -136,10 +136,15 @@ export default function BudgetMobile() {
   const totalCommitted = budgetData.reduce((sum, item) => sum + Number(item.committed_amount || 0), 0)
   const totalAvailable = budgetData.reduce((sum, item) => sum + Number(item.available_amount || 0), 0)
 
-  const overBudgetCategories = budgetData.filter(item => Number(item.percentage_used) > 100)
+  const overBudgetCategories = budgetData.filter(item => 
+    Number(item.percentage_used) > 100 || 
+    (Number(item.budgeted_amount) === 0 && (Number(item.spent_amount) + Number(item.committed_amount)) > 0)
+  )
+
   const nearLimitCategories = budgetData.filter(item => {
     const pct = Number(item.percentage_used)
-    return pct >= 85 && pct <= 100
+    const hasBudget = Number(item.budgeted_amount) > 0
+    return hasBudget && pct >= 85 && pct <= 100
   })
 
   if (loading) {

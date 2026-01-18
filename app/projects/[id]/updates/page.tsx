@@ -14,6 +14,8 @@ import { createClient } from '@/lib/supabase'
 import Toast from '@/app/Toast'
 import WhatsAppChat from '@/components/WhatsAppChat'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import Sidebar from '../components/Sidebar'
+import MobileSidebar from '../components/MobileSidebar'
 import { 
   CATEGORIES, 
   BUILDINGS, 
@@ -803,9 +805,19 @@ export default function ProjectPage() {
         }
       `}</style>
 
-      <div style={modernStyles.page}>
+      <div style={{ display: 'flex', minHeight: '100vh' }}>
+        {/* Sidebar */}
+        {!isMobile && <Sidebar projectName={project?.name || 'פרויקט'} />}
+        {isMobile && <MobileSidebar projectName={project?.name || 'פרויקט'} currentPage="updates" />}
         
-        {/* HEADER */}
+        <div style={{
+          ...modernStyles.page,
+          marginRight: isMobile ? '0' : '260px',
+          flex: 1,
+          width: isMobile ? '100%' : 'calc(100% - 260px)',
+        }}>
+          
+          {/* HEADER */}
         <div style={modernStyles.header}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <a href="/projects" style={{ 
@@ -1286,6 +1298,7 @@ export default function ProjectPage() {
 
         {/* Toast */}
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      </div>
       </div>
     </>
   )

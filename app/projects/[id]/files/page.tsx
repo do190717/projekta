@@ -11,6 +11,7 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import Toast from '../../../Toast'
 import MobileSidebar from '../components/MobileSidebar'
+import Sidebar from '../components/Sidebar'
 
 // ===========================================
 // HOOKS
@@ -479,12 +480,23 @@ export default function FilesPage() {
         * { font-family: 'Heebo', sans-serif; box-sizing: border-box; }
       `}</style>
 
-      <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', fontFamily: 'Heebo, sans-serif' }}>
-        
-        {/* Mobile Sidebar */}
+      <div style={{ display: 'flex', minHeight: '100vh' }}>
+        {/* Sidebars */}
+        {!isMobile && project && (
+          <Sidebar projectName={project.name} />
+        )}
         {isMobile && project && (
           <MobileSidebar projectName={project.name} currentPage="files" />
         )}
+        
+        <div style={{ 
+          minHeight: '100vh', 
+          backgroundColor: '#f8fafc', 
+          fontFamily: 'Heebo, sans-serif',
+          marginRight: isMobile ? '0' : '260px',
+          flex: 1,
+          width: isMobile ? '100%' : 'calc(100% - 260px)',
+        }}>
         
         {/* Header */}
         <div style={{ 
@@ -875,7 +887,8 @@ export default function FilesPage() {
 
         <input type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: 'none' }} />
         {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-      </div>
+        </div> {/* סגירה של wrapper עם marginRight */}
+      </div> {/* סגירה של flex container */}
     </>
   )
 }

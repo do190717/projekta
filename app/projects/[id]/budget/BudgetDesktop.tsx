@@ -1,106 +1,40 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
 import Sidebar from '../components/Sidebar'
 import AddPOModal from './components/AddPOModal'
 import POListModal from './components/POListModal'
 import type { BudgetWithCommitted } from '@/types/budget'
+import { 
+  useProject, 
+  useBudgetSettings, 
+  useBudgetData,
+  useCategories 
+} from '@/hooks/useQueries'
 
 export default function BudgetDesktop() {
   const params = useParams()
   const router = useRouter()
   const projectId = params.id as string
-  const supabase = createClient()
 
-  const [project, setProject] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [budgetSettings, setBudgetSettings] = useState<any>(null)
-  const [budgetData, setBudgetData] = useState<BudgetWithCommitted[]>([])
+  // ✨ React Query hooks - replace all the useState + useEffect
+  const { data: project, isLoading: projectLoading } = useProject(projectId)
+  const { data: budgetSettings, isLoading: settingsLoading } = useBudgetSettings(projectId)
+  const { data: budgetData = [], isLoading: budgetLoading, refetch: refetchBudget } = useBudgetData(projectId)
+  const { data: categories = [] } = useCategories('expense')
+
+  // Local UI state (only for UI, not for data!)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
-  const [categories, setCategories] = useState<any[]>([])
-  
-  // Modals state
   const [showAddPOModal, setShowAddPOModal] = useState(false)
   const [showPOListModal, setShowPOListModal] = useState(false)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>()
   const [selectedCategoryName, setSelectedCategoryName] = useState<string | undefined>()
 
-  useEffect(() => {
-    loadData()
-  }, [projectId])
-
-  async function loadData() {
-    try {
-      // Load project
-      const { data: projectData } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('id', projectId)
-        .single()
-      
-      setProject(projectData)
-
-      // Load budget settings
-      const { data: settingsData } = await supabase
-        .from('project_budget_settings')
-        .select('*')
-        .eq('project_id', projectId)
-        .single()
-      
-      setBudgetSettings(settingsData)
-
-      // If no budget setup, redirect to setup
-      if (!settingsData?.setup_completed) {
-        router.push(`/projects/${projectId}/budget/setup`)
-        return
-      }
-
-      // Load categories for modals
-      const { data: categoriesData } = await supabase
-        .from('cash_flow_categories')
-        .select('id, name, icon')
-        .eq('type', 'expense')
-        .order('name')
-      
-      setCategories(categoriesData || [])
-
-      // ✨ NEW: Load budget data from view with committed costs
-      const { data: budgetViewData } = await supabase
-        .from('budget_with_committed_costs')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('budgeted_amount', { ascending: false })
-      
-      if (!budgetViewData) {
-        setBudgetData([])
-        return
-      }
-
-      // Load recent transactions for each category
-      const dataWithTransactions = await Promise.all(
-        budgetViewData.map(async (item) => {
-          const { data: transactions } = await supabase
-            .from('cash_flow')
-            .select('*')
-            .eq('project_id', projectId)
-            .eq('category_id', item.category_id)
-            .in('type', ['expense', 'addition_expense'])
-            .order('date', { ascending: false })
-            .limit(5)
-          
-          return { ...item, transactions: transactions || [] }
-        })
-      )
-      
-      setBudgetData(dataWithTransactions)
-
-    } catch (error) {
-      console.error('Error loading budget:', error)
-    } finally {
-      setLoading(false)
-    }
+  // Redirect if budget not setup
+  if (!settingsLoading && budgetSettings && !budgetSettings.setup_completed) {
+    router.push(`/projects/${projectId}/budget/setup`)
+    return null
   }
 
   function toggleCategory(categoryId: string) {
@@ -124,9 +58,9 @@ export default function BudgetDesktop() {
     setShowPOListModal(true)
   }
 
-  function handlePOSuccess() {
-    loadData() // Reload data after PO changes
-  }
+ function handlePOSuccess() {
+  refetchBudget() // React Query will refetch!
+}
 
   // Calculate totals
   const totalBudgeted = budgetData.reduce((sum, item) => sum + Number(item.budgeted_amount || 0), 0)
@@ -144,6 +78,8 @@ export default function BudgetDesktop() {
     const hasBudget = Number(item.budgeted_amount) > 0
     return hasBudget && pct >= 85 && pct <= 100
   })
+
+  const loading = projectLoading || settingsLoading || budgetLoading
 
   if (loading) {
     return (
@@ -838,7 +774,7 @@ export default function BudgetDesktop() {
               setSelectedCategoryId(undefined)
               setSelectedCategoryName(undefined)
             }}
-            onUpdate={loadData}
+            onUpdate={refetchBudget}
           />
         )}
     </div>

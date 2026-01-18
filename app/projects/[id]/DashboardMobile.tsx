@@ -1,10 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
 import { UPDATE_STATUSES } from '@/lib/constants'
 import MobileSidebar from './components/MobileSidebar'
+import {
+  useProject,
+  useDashboardStats,
+  useRecentUpdates,
+  useRecentFiles,
+  useUpdateComments,
+  useProfiles
+} from '@/hooks/useQueries'
 
 /**
  * Dashboard - גרסת מובייל
@@ -14,132 +21,40 @@ export default function DashboardMobile() {
   const params = useParams()
   const router = useRouter()
   const projectId = params.id as string
-  const supabase = createClient()
 
-  const [project, setProject] = useState<any>(null)
+  // ✨ React Query hooks
+  const { data: project, isLoading: projectLoading } = useProject(projectId)
+  const { data: stats = { totalUpdates: 0, openUpdates: 0, teamMembers: 0, filesCount: 0 }, isLoading: statsLoading } = useDashboardStats(projectId)
+  const { data: recentUpdates = [], isLoading: updatesLoading } = useRecentUpdates(projectId, 10)
+  const { data: recentFiles = [], isLoading: filesLoading } = useRecentFiles(projectId, 3)
+  
+  // Get user IDs from updates
+  const userIds = useMemo(() => 
+    recentUpdates.map(u => u.user_id).filter(Boolean),
+    [recentUpdates]
+  )
+  
+  // Get update IDs
+  const updateIds = useMemo(() => 
+    recentUpdates.map(u => u.id),
+    [recentUpdates]
+  )
+  
+  // Load profiles and comments based on updates
+  const { data: profiles = {} } = useProfiles(userIds)
+  const { data: comments = {} } = useUpdateComments(updateIds)
+  
+  const loading = projectLoading || statsLoading || updatesLoading || filesLoading
+
   const [user, setUser] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [stats, setStats] = useState({
-    totalUpdates: 0,
-    openUpdates: 0,
-    teamMembers: 0,
-    filesCount: 0,
-  })
-  const [recentUpdates, setRecentUpdates] = useState<any[]>([])
-  const [recentFiles, setRecentFiles] = useState<any[]>([])
-  const [profiles, setProfiles] = useState<any>({})
-  const [comments, setComments] = useState<{ [key: string]: any[] }>({})
-  const [readStatuses, setReadStatuses] = useState<{ [key: string]: any[] }>({})
 
   useEffect(() => {
-    loadDashboard()
-  }, [projectId])
-
-  async function loadDashboard() {
-    try {
-      const { data: { user: currentUser } } = await supabase.auth.getUser()
+    (async () => {
+      const { createClient } = await import('@/lib/supabase')
+      const { data: { user: currentUser } } = await createClient().auth.getUser()
       setUser(currentUser)
-
-      const { data: projectData } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('id', projectId)
-        .single()
-      
-      setProject(projectData)
-
-      const { count: updatesCount } = await supabase
-        .from('updates')
-        .select('*', { count: 'exact', head: true })
-        .eq('project_id', projectId)
-
-      const { count: openCount } = await supabase
-        .from('updates')
-        .select('*', { count: 'exact', head: true })
-        .eq('project_id', projectId)
-        .in('status', ['open', 'in_review', 'in_progress'])
-
-      const { count: teamCount } = await supabase
-        .from('project_members')
-        .select('*', { count: 'exact', head: true })
-        .eq('project_id', projectId)
-
-      const { count: filesCount } = await supabase
-        .from('project_files')
-        .select('*', { count: 'exact', head: true })
-        .eq('project_id', projectId)
-
-      setStats({
-        totalUpdates: updatesCount || 0,
-        openUpdates: openCount || 0,
-        teamMembers: (teamCount || 0) + 1,
-        filesCount: filesCount || 0,
-      })
-
-      const { data: recentUpdatesData } = await supabase
-        .from('updates')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false })
-        .limit(10)
-      
-      setRecentUpdates(recentUpdatesData || [])
-
-      if (recentUpdatesData && recentUpdatesData.length > 0) {
-        for (const update of recentUpdatesData) {
-          const { data: commentsData } = await supabase
-            .from('comments')
-            .select('*')
-            .eq('update_id', update.id)
-          
-          if (commentsData) {
-            setComments((prev: any) => ({ ...prev, [update.id]: commentsData }))
-            
-            const commentIds = commentsData.map(c => c.id)
-            if (commentIds.length > 0 && currentUser) {
-              const { data: readData } = await supabase
-                .from('comment_reads')
-                .select('*')
-                .in('comment_id', commentIds)
-                .eq('user_id', currentUser.id)
-              
-              if (readData) {
-                setReadStatuses((prev: any) => ({ ...prev, [update.id]: readData }))
-              }
-            }
-          }
-        }
-      }
-
-      const { data: recentFilesData } = await supabase
-        .from('project_files')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false })
-        .limit(3)
-      
-      setRecentFiles(recentFilesData || [])
-
-      if (recentUpdatesData && recentUpdatesData.length > 0) {
-        const userIds = recentUpdatesData.map(u => u.user_id).filter(Boolean)
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('*')
-          .in('id', userIds)
-        
-        if (profilesData) {
-          const profilesMap: any = {}
-          profilesData.forEach(p => { profilesMap[p.id] = p })
-          setProfiles(profilesMap)
-        }
-      }
-
-    } catch (error) {
-      console.error('Error loading dashboard:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+    })()
+  }, [])
 
   function generateAlerts() {
     const alerts = []
@@ -396,7 +311,7 @@ export default function DashboardMobile() {
                 const updateStatus = UPDATE_STATUSES[(update.status || 'open') as keyof typeof UPDATE_STATUSES] || UPDATE_STATUSES.open
                 const isCompleted = update.status === 'completed' || update.status === 'verified'
                 const updateComments: any[] = comments[update.id] || []
-                const updateReadStatuses: any[] = readStatuses[update.id] || []
+                const updateReadStatuses: any[] = []
                 
                 const unreadComments = updateComments.filter((c: any) => {
                   if (c.deleted_at) return false

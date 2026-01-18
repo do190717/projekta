@@ -4,11 +4,26 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
+// Hook for responsive design
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false)
+  
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  
+  return isMobile
+}
+
 export default function BudgetSetupWizard() {
   const params = useParams()
   const router = useRouter()
   const projectId = params.id as string
   const supabase = createClient()
+  const isMobile = useIsMobile()
 
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
@@ -539,8 +554,8 @@ export default function BudgetSetupWizard() {
             }}>
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(4, 1fr)',
-                gap: '16px',
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)',
+                gap: isMobile ? '12px' : '16px',
               }}>
                 <div>
                   <p style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#64748b' }}>
@@ -620,7 +635,7 @@ export default function BudgetSetupWizard() {
             }}>
               {categories.map(category => (
                 <div key={category.id} style={{
-                  padding: '16px',
+                  padding: isMobile ? '12px' : '16px',
                   marginBottom: '12px',
                   backgroundColor: '#f8fafc',
                   borderRadius: '12px',
@@ -628,9 +643,10 @@ export default function BudgetSetupWizard() {
                 }}>
                   <div style={{
                     display: 'flex',
-                    alignItems: 'center',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    alignItems: isMobile ? 'stretch' : 'center',
                     gap: '12px',
-                    marginBottom: '12px',
+                    marginBottom: isMobile ? '8px' : '12px',
                   }}>
                     <span style={{ fontSize: '28px' }}>{category.icon}</span>
                     <div style={{ flex: 1 }}>
@@ -652,7 +668,7 @@ export default function BudgetSetupWizard() {
                         </p>
                       )}
                     </div>
-                    <div style={{ position: 'relative', width: '180px' }}>
+                    <div style={{ position: 'relative', width: isMobile ? '100%' : '180px' }}>
                       <span style={{
                         position: 'absolute',
                         right: '12px',
@@ -1000,7 +1016,9 @@ export default function BudgetSetupWizard() {
             }}>
               <div style={{
                 display: 'flex',
+                flexDirection: isMobile ? 'column' : 'row',
                 justifyContent: 'space-between',
+                gap: isMobile ? '16px' : '0',
                 marginBottom: '20px',
                 paddingBottom: '20px',
                 borderBottom: '2px solid #e5e7eb',
@@ -1013,7 +1031,7 @@ export default function BudgetSetupWizard() {
                     ₪{parseFloat(totalBudget).toLocaleString()}
                   </p>
                 </div>
-                <div style={{ textAlign: 'left' }}>
+                <div style={{ textAlign: isMobile ? 'right' : 'left' }}>
                   <p style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#64748b' }}>
                     סעיפים
                   </p>
@@ -1030,9 +1048,11 @@ export default function BudgetSetupWizard() {
                   .map(category => (
                     <div key={category.id} style={{
                       display: 'flex',
+                      flexDirection: isMobile ? 'column' : 'row',
                       justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '12px',
+                      alignItems: isMobile ? 'flex-start' : 'center',
+                      gap: isMobile ? '8px' : '0',
+                      padding: isMobile ? '10px' : '12px',
                       backgroundColor: 'white',
                       borderRadius: '8px',
                     }}>
@@ -1071,13 +1091,20 @@ export default function BudgetSetupWizard() {
               }}>
                 💡 מה הלאה?
               </p>
-              <p style={{ margin: 0, fontSize: '14px', color: '#047857', lineHeight: '1.6' }}>
+            <p style={{ 
+                margin: 0, 
+                fontSize: isMobile ? '13px' : '14px', 
+                color: '#047857', 
+                lineHeight: '1.6',
+                wordBreak: 'break-word',
+              }}>
                 מעכשיו כל הוצאה שתוסיף תעודכן אוטומטית מול התקציב המתוכנן. תקבל התראות על חריגות ותוכל לעקוב אחרי הביצוע בזמן אמת.
               </p>
             </div>
 
             <div style={{
               display: 'flex',
+              flexDirection: isMobile ? 'column-reverse' : 'row',
               justifyContent: 'space-between',
               gap: '12px',
             }}>
@@ -1093,6 +1120,7 @@ export default function BudgetSetupWizard() {
                   cursor: 'pointer',
                   fontFamily: 'Heebo, sans-serif',
                   color: '#64748b',
+                  width: isMobile ? '100%' : 'auto',
                 }}
               >
                 ⬅️ חזור לעריכה
@@ -1110,6 +1138,7 @@ export default function BudgetSetupWizard() {
                   fontWeight: '600',
                   cursor: loading ? 'not-allowed' : 'pointer',
                   fontFamily: 'Heebo, sans-serif',
+                  width: isMobile ? '100%' : 'auto',
                 }}
               >
                 {loading ? '⏳ שומר...' : '✅ שמור והתחל'}

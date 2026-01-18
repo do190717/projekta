@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase'
+import { useToast } from '@/app/ToastContext'
 
 const supabase = createClient()
 
@@ -137,6 +138,7 @@ export function useCashFlow(projectId: string) {
 
 export function useAddCashFlow() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   
   return useMutation({
     mutationFn: async (cashFlow: any) => {
@@ -153,6 +155,10 @@ export function useAddCashFlow() {
       // Invalidate relevant queries to refetch data
       queryClient.invalidateQueries({ queryKey: ['cash-flow', data.project_id] })
       queryClient.invalidateQueries({ queryKey: ['budget', data.project_id] })
+      toast.success('ההוצאה נוספה בהצלחה ✅')
+    },
+    onError: () => {
+      toast.error('שגיאה בהוספת ההוצאה ⚠️')
     },
   })
 }
@@ -211,6 +217,7 @@ export function usePurchaseOrders(projectId: string, categoryId?: string) {
 
 export function useAddPurchaseOrder() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   
   return useMutation({
     mutationFn: async (po: any) => {
@@ -227,12 +234,17 @@ export function useAddPurchaseOrder() {
       // Invalidate relevant queries
       queryClient.invalidateQueries({ queryKey: ['purchase-orders', data.project_id] })
       queryClient.invalidateQueries({ queryKey: ['budget', data.project_id] })
+      toast.success('ההזמנה נוספה בהצלחה ✅')
+    },
+    onError: () => {
+      toast.error('שגיאה בהוספת ההזמנה ⚠️')
     },
   })
 }
 
 export function useUpdatePurchaseOrder() {
   const queryClient = useQueryClient()
+  const toast = useToast()
   
   return useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: any }) => {
@@ -249,6 +261,10 @@ export function useUpdatePurchaseOrder() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders', data.project_id] })
       queryClient.invalidateQueries({ queryKey: ['budget', data.project_id] })
+      toast.success('ההזמנה עודכנה בהצלחה 💚')
+    },
+    onError: () => {
+      toast.error('שגיאה בעדכון ההזמנה ⚠️')
     },
   })
 }

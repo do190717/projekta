@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
 export default function LoginPage() {
@@ -8,6 +9,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
+  const router = useRouter()
 
   const supabase = createClient()
 
@@ -23,10 +25,12 @@ export default function LoginPage() {
 
     if (error) {
       setMessage(error.message)
+      setLoading(false)
     } else {
-      window.location.href = '/'
+      // ✅ תיקון: router במקום window.location.href
+      router.push('/projects')
+      router.refresh()
     }
-    setLoading(false)
   }
 
   const handleSignUp = async () => {
@@ -58,6 +62,7 @@ export default function LoginPage() {
             placeholder="אימייל"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            required
             style={{
               width: '100%',
               padding: '12px',
@@ -72,6 +77,7 @@ export default function LoginPage() {
             placeholder="סיסמה"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            required
             style={{
               width: '100%',
               padding: '12px',

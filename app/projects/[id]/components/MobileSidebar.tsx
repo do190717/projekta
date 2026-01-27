@@ -23,14 +23,20 @@ export default function MobileSidebar({ projectName, currentPage }: MobileSideba
       key: 'dashboard'
     },
     {
+      icon: '💰',
+      label: 'פיננסים V2',
+      path: `/projects/${projectId}/financials-v2`,
+      key: 'financials'
+    },
+    {
       icon: '📊',
-      label: 'תקציב',
+      label: 'תקציב (ישן)',
       path: `/projects/${projectId}/budget`,
       key: 'budget'
     },
     {
-      icon: '💰',
-      label: 'תזרים מזומנים',
+      icon: '💸',
+      label: 'תזרים (ישן)',
       path: `/projects/${projectId}/cash-flow`,
       key: 'cash-flow'
     },

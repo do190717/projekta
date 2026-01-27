@@ -52,6 +52,14 @@ export default function Sidebar({ projectName }: SidebarProps) {
       highlight: true,       
     },
     {
+      id: 'financials-v2',
+      icon: '🚧',
+      label: 'פיננסים V2 (ניסיון)',
+      href: `/projects/${projectId}/financials-v2`,
+      enabled: true,
+      highlight: true,
+    },
+    {
       id: 'workforce',
       icon: '👷',
       label: 'כוח אדם',

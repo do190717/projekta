@@ -237,93 +237,94 @@ a:hover {
 }
 
 /* Animation Classes */
-.animate-fadeIn { animation: fadeIn 0.2s ease-out; }
-.animate-fadeInUp { animation: fadeInUp 0.3s ease-out; }
-.animate-fadeInDown { animation: fadeInDown 0.3s ease-out; }
-.animate-scaleIn { animation: scaleIn 0.2s ease-out; }
-.animate-pulse { animation: pulse 2s infinite; }
-.animate-spin { animation: spin 1s linear infinite; }
+@layer utilities {
+  .animate-fadeIn { animation: fadeIn 0.2s ease-out; }
+  .animate-fadeInUp { animation: fadeInUp 0.3s ease-out; }
+  .animate-fadeInDown { animation: fadeInDown 0.3s ease-out; }
+  .animate-scaleIn { animation: scaleIn 0.2s ease-out; }
+  .animate-pulse { animation: pulse 2s infinite; }
+  .animate-spin { animation: spin 1s linear infinite; }
+}
 
 /* ===========================================
    Utility Classes
    =========================================== */
 
-.glass {
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(10px);
-}
+@layer components {
+  .glass {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+  }
 
-.gradient-primary {
-  background: linear-gradient(135deg, var(--color-primary-600) 0%, var(--color-primary-700) 100%);
-}
+  .gradient-primary {
+    background: linear-gradient(135deg, var(--color-primary-600) 0%, var(--color-primary-700) 100%);
+  }
 
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--color-gray-200) 25%,
-    var(--color-gray-100) 50%,
-    var(--color-gray-200) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
-  border-radius: var(--radius-md);
-}
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--color-gray-200) 25%,
+      var(--color-gray-100) 50%,
+      var(--color-gray-200) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: var(--radius-md);
+  }
 
-/* Card */
-.card {
-  background: var(--surface);
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-  transition: all var(--transition-normal);
-}
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-normal);
+  }
 
-.card:hover {
-  box-shadow: var(--shadow-md);
-}
+  .card:hover {
+    box-shadow: var(--shadow-md);
+  }
 
-/* Button Base */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1.25rem;
-  font-family: var(--font-sans);
-  font-weight: 500;
-  font-size: 0.875rem;
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  border: none;
-}
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    font-family: var(--font-sans);
+    font-weight: 500;
+    font-size: 0.875rem;
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    border: none;
+  }
 
-.btn-primary {
-  background: var(--color-primary-500);
-  color: white;
-}
+  .btn-primary {
+    background: var(--color-primary-500);
+    color: white;
+  }
 
-.btn-primary:hover {
-  background: var(--color-primary-600);
-}
+  .btn-primary:hover {
+    background: var(--color-primary-600);
+  }
 
-/* Input */
-.input {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  font-family: var(--font-sans);
-  font-size: 1rem;
-  color: var(--text);
-  background: var(--surface);
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-lg);
-  transition: all var(--transition-fast);
-  outline: none;
-}
+  .input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    color: var(--text);
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    transition: all var(--transition-fast);
+    outline: none;
+  }
 
-.input:focus {
-  border-color: var(--color-primary-500);
-  box-shadow: 0 0 0 3px var(--color-primary-100);
+  .input:focus {
+    border-color: var(--color-primary-500);
+    box-shadow: 0 0 0 3px var(--color-primary-100);
+  }
 }
 
 /* Mobile */

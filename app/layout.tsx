@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./Providers";
+import { ToastProvider } from "@/components/ToastProvider"
 
 export const metadata: Metadata = {
   title: "Projekta",
@@ -18,6 +19,7 @@ export default function RootLayout({
         <Providers>
           {children}
         </Providers>
+        <ToastProvider />
       </body>
     </html>
   );

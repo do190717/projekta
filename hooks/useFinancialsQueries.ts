@@ -74,10 +74,7 @@ export function useContractItems(projectId: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('contract_items')
-        .select(`
-          *,
-          category:cash_flow_categories(id, name, icon, color)
-        `)
+        .select('*')
         .eq('project_id', projectId)
         .order('created_at', { ascending: false })
 
@@ -97,10 +94,7 @@ export function useCashFlowV2(projectId: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('cash_flow_v2')
-        .select(`
-          *,
-          category:cash_flow_categories(id, name, icon, color)
-        `)
+        .select('*')
         .eq('project_id', projectId)
         .order('date', { ascending: false })
 
@@ -121,7 +115,7 @@ export function useFinancialsOverview(projectId: string) {
       // Get all contract items
       const { data: contractItems, error: contractError } = await supabase
         .from('contract_items')
-        .select('*, category:cash_flow_categories(*)')
+        .select('*')
         .eq('project_id', projectId)
 
       if (contractError) throw contractError

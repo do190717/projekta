@@ -1,6 +1,7 @@
 'use client'
 
 import { usePathname, useRouter } from 'next/navigation'
+import { useUnreadCount } from '@/lib/updates-v2/useUnreadCount'
 
 interface SidebarProps {
   projectName: string
@@ -12,6 +13,7 @@ export default function Sidebar({ projectName }: SidebarProps) {
   
   // Extract project ID from pathname
   const projectId = pathname?.split('/')[2]
+  const { unreadCount } = useUnreadCount(projectId || null)
   
   const menuItems = [
     {
@@ -20,6 +22,15 @@ export default function Sidebar({ projectName }: SidebarProps) {
       label: 'דשבורד',
       href: `/projects/${projectId}`,
       enabled: true,
+    },
+    {
+      id: 'smart-chat',
+      icon: '💬',
+      label: 'צ\'אט חכם',
+      href: `/projects/${projectId}/updates-v2`,
+      enabled: true,
+      highlight: true,
+      badge: unreadCount,
     },
     {
       id: 'updates',
@@ -50,14 +61,6 @@ export default function Sidebar({ projectName }: SidebarProps) {
       href: `/projects/${projectId}/budget`,  
       enabled: true,         
       highlight: true,       
-    },
-    {
-      id: 'financials-v2',
-      icon: '🚧',
-      label: 'פיננסים V2 (ניסיון)',
-      href: `/projects/${projectId}/financials-v2`,
-      enabled: true,
-      highlight: true,
     },
     {
       id: 'workforce',
@@ -186,6 +189,19 @@ export default function Sidebar({ projectName }: SidebarProps) {
           >
             <span style={{ fontSize: '20px' }}>{item.icon}</span>
             <span style={{ flex: 1 }}>{item.label}</span>
+            {(item as any).badge > 0 && (
+              <span style={{
+                minWidth: 22, height: 22, borderRadius: 11,
+                backgroundColor: '#ef4444',
+                color: '#fff',
+                fontSize: 12, fontWeight: 800,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: '0 6px',
+                animation: 'pulse 2s infinite',
+              }}>
+                {(item as any).badge > 99 ? '99+' : (item as any).badge}
+              </span>
+            )}
             {!item.enabled && (
               <span style={{ 
                 fontSize: '11px', 
@@ -196,7 +212,7 @@ export default function Sidebar({ projectName }: SidebarProps) {
                 🔜
               </span>
             )}
-            {item.highlight && item.enabled && (
+            {item.highlight && item.enabled && !((item as any).badge > 0) && (
               <span style={{ 
                 fontSize: '11px', 
                 padding: '2px 8px',
@@ -257,6 +273,14 @@ export default function Sidebar({ projectName }: SidebarProps) {
       }}>
         Projekta v3.0
       </div>
+
+      {/* Badge animation */}
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+      `}</style>
     </div>
   )
 }

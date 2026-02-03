@@ -1,35 +1,44 @@
 'use client'
 
 import { useState } from 'react'
-import { useCategories } from '@/hooks/useQueries'
 import { useAddCashFlowTransaction } from '@/hooks/useFinancialsQueries'
+import { useAllCategories, Category } from '@/hooks/useAllCategories'
+import AddCustomCategoryModal from './AddCustomCategoryModal'
+import { useToast } from '@/app/ToastContext'
 
 interface Props {
   projectId: string
   onClose: () => void
+  onAddContractItem?: (categoryId: string) => void
 }
 
-export function AddTransactionModal({ projectId, onClose }: Props) {
-  const { data: categories = [] } = useCategories()
+export function AddTransactionModal({ projectId, onClose, onAddContractItem }: Props) {
+  const { categories: allCategories, addCategory } = useAllCategories(projectId)
   const addMutation = useAddCashFlowTransaction()
+  const toast = useToast()
 
   const [formData, setFormData] = useState({
     type: 'expense' as 'income' | 'expense',
     amount: '',
     description: '',
     category_id: '',
-    date: new Date().toISOString().split('T')[0], // YYYY-MM-DD
+    date: new Date().toISOString().split('T')[0],
     status: 'paid' as 'paid' | 'pending',
   })
 
-  const [error, setError] = useState('')
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setError('')
 
     if (!formData.amount || !formData.description) {
-      setError('נא למלא את כל השדות החובה')
+      toast.error('נא למלא את כל השדות החובה')
+      return
+    }
+
+    // ✅ קטגוריה חובה!
+    if (!formData.category_id) {
+      toast.error('חובה לבחור קטגוריה')
       return
     }
 
@@ -39,327 +48,245 @@ export function AddTransactionModal({ projectId, onClose }: Props) {
         type: formData.type,
         amount: parseFloat(formData.amount),
         description: formData.description,
-        category_id: formData.category_id || null,
+        category_id: formData.category_id,
         date: formData.date,
         status: formData.status,
-        created_by: null, // TODO: add user ID when auth is ready
+        created_by: null,
       })
+      toast.success('✅ תנועה נוספה בהצלחה!')
       onClose()
     } catch (err: any) {
-      setError(err.message || 'שגיאה בהוספת תנועה')
+      toast.error(err.message || 'שגיאה בהוספת תנועה')
     }
   }
 
+  const handleCategoryChange = (value: string) => {
+    if (value === 'add-new') {
+      setShowAddCategoryModal(true)
+    } else {
+      setFormData(prev => ({ ...prev, category_id: value }))
+    }
+  }
+
+  const handleCategoryAdded = (category: { id: string; name: string; icon: string }) => {
+    addCategory(category)
+    setFormData(prev => ({ ...prev, category_id: category.id }))
+  }
+
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000,
-      fontFamily: 'Heebo, sans-serif',
-      direction: 'rtl',
-    }}>
-      <div style={{
-        backgroundColor: 'white',
-        borderRadius: '16px',
-        padding: '32px',
-        width: '90%',
-        maxWidth: '500px',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-        maxHeight: '90vh',
-        overflowY: 'auto',
-      }}>
-        <h2 style={{ 
-          fontSize: '24px', 
-          fontWeight: '700', 
-          marginBottom: '24px',
-          color: '#1e293b',
-        }}>
-          💸 הוסף תנועה כספית
-        </h2>
-
-        <form onSubmit={handleSubmit}>
-          {/* Type Selection */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ 
-              display: 'block', 
-              fontSize: '14px', 
-              fontWeight: '600', 
-              marginBottom: '8px',
-              color: '#64748b',
-            }}>
-              סוג תנועה *
-            </label>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, type: 'expense' })}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  backgroundColor: formData.type === 'expense' ? '#FEE2E2' : 'white',
-                  border: `2px solid ${formData.type === 'expense' ? '#EF4444' : '#E5E7EB'}`,
-                  borderRadius: '8px',
-                  fontSize: '15px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  fontFamily: 'Heebo, sans-serif',
-                  color: formData.type === 'expense' ? '#EF4444' : '#64748b',
-                }}
-              >
-                📉 הוצאה
-              </button>
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, type: 'income' })}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  backgroundColor: formData.type === 'income' ? '#D1FAE5' : 'white',
-                  border: `2px solid ${formData.type === 'income' ? '#10B981' : '#E5E7EB'}`,
-                  borderRadius: '8px',
-                  fontSize: '15px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  fontFamily: 'Heebo, sans-serif',
-                  color: formData.type === 'income' ? '#10B981' : '#64748b',
-                }}
-              >
-                📈 הכנסה
-              </button>
-            </div>
-          </div>
-
-          {/* Amount */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ 
-              display: 'block', 
-              fontSize: '14px', 
-              fontWeight: '600', 
-              marginBottom: '8px',
-              color: '#64748b',
-            }}>
-              סכום *
-            </label>
-            <input
-              type="number"
-              value={formData.amount}
-              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-              placeholder="0"
-              required
-              min="0"
-              step="0.01"
-              style={{
-                width: '100%',
-                padding: '12px',
-                border: '2px solid #E5E7EB',
-                borderRadius: '8px',
-                fontSize: '15px',
-                fontFamily: 'Heebo, sans-serif',
-              }}
-            />
-          </div>
-
-          {/* Description */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ 
-              display: 'block', 
-              fontSize: '14px', 
-              fontWeight: '600', 
-              marginBottom: '8px',
-              color: '#64748b',
-            }}>
-              תיאור *
-            </label>
-            <input
-              type="text"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="לדוגמה: תשלום לקבלן - סיום חשמל"
-              required
-              style={{
-                width: '100%',
-                padding: '12px',
-                border: '2px solid #E5E7EB',
-                borderRadius: '8px',
-                fontSize: '15px',
-                fontFamily: 'Heebo, sans-serif',
-              }}
-            />
-          </div>
-
-          {/* Category */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ 
-              display: 'block', 
-              fontSize: '14px', 
-              fontWeight: '600', 
-              marginBottom: '8px',
-              color: '#64748b',
-            }}>
-              קטגוריה (אופציונלי)
-            </label>
-            <select
-              value={formData.category_id}
-              onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-              style={{
-                width: '100%',
-                padding: '12px',
-                border: '2px solid #E5E7EB',
-                borderRadius: '8px',
-                fontSize: '15px',
-                fontFamily: 'Heebo, sans-serif',
-              }}
-            >
-              <option value="">ללא קטגוריה</option>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.icon} {cat.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Date */}
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ 
-              display: 'block', 
-              fontSize: '14px', 
-              fontWeight: '600', 
-              marginBottom: '8px',
-              color: '#64748b',
-            }}>
-              תאריך *
-            </label>
-            <input
-              type="date"
-              value={formData.date}
-              onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-              required
-              style={{
-                width: '100%',
-                padding: '12px',
-                border: '2px solid #E5E7EB',
-                borderRadius: '8px',
-                fontSize: '15px',
-                fontFamily: 'Heebo, sans-serif',
-              }}
-            />
-          </div>
-
-          {/* Status */}
-          <div style={{ marginBottom: '24px' }}>
-            <label style={{ 
-              display: 'block', 
-              fontSize: '14px', 
-              fontWeight: '600', 
-              marginBottom: '8px',
-              color: '#64748b',
-            }}>
-              סטטוס תשלום *
-            </label>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, status: 'paid' })}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  backgroundColor: formData.status === 'paid' ? '#D1FAE5' : 'white',
-                  border: `2px solid ${formData.status === 'paid' ? '#10B981' : '#E5E7EB'}`,
-                  borderRadius: '8px',
-                  fontSize: '15px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  fontFamily: 'Heebo, sans-serif',
-                  color: formData.status === 'paid' ? '#10B981' : '#64748b',
-                }}
-              >
-                ✅ שולם
-              </button>
-              <button
-                type="button"
-                onClick={() => setFormData({ ...formData, status: 'pending' })}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  backgroundColor: formData.status === 'pending' ? '#FEF3C7' : 'white',
-                  border: `2px solid ${formData.status === 'pending' ? '#F59E0B' : '#E5E7EB'}`,
-                  borderRadius: '8px',
-                  fontSize: '15px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  fontFamily: 'Heebo, sans-serif',
-                  color: formData.status === 'pending' ? '#F59E0B' : '#64748b',
-                }}
-              >
-                ⏳ ממתין
-              </button>
-            </div>
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div style={{
-              padding: '12px',
-              backgroundColor: '#FEE2E2',
-              color: '#DC2626',
-              borderRadius: '8px',
-              marginBottom: '20px',
-              fontSize: '14px',
-            }}>
-              {error}
-            </div>
-          )}
-
-          {/* Buttons */}
-          <div style={{ display: 'flex', gap: '12px' }}>
+    <>
+      <div 
+        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+        onClick={onClose}
+      >
+        <div 
+          className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-8"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold text-[#1e293b]">
+              ➕ הוסף תנועה חדשה
+            </h2>
             <button
-              type="button"
               onClick={onClose}
-              style={{
-                flex: 1,
-                padding: '12px',
-                backgroundColor: 'white',
-                border: '2px solid #E5E7EB',
-                borderRadius: '8px',
-                fontSize: '15px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                fontFamily: 'Heebo, sans-serif',
-                color: '#64748b',
-              }}
+              className="text-2xl text-[#64748b] hover:text-[#1e293b] transition-colors"
             >
-              ביטול
-            </button>
-            <button
-              type="submit"
-              disabled={addMutation.isPending}
-              style={{
-                flex: 1,
-                padding: '12px',
-                backgroundColor: '#6366F1',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '15px',
-                fontWeight: '600',
-                cursor: addMutation.isPending ? 'not-allowed' : 'pointer',
-                fontFamily: 'Heebo, sans-serif',
-                color: 'white',
-                opacity: addMutation.isPending ? 0.6 : 1,
-              }}
-            >
-              {addMutation.isPending ? 'שומר...' : '💾 הוסף תנועה'}
+              ✕
             </button>
           </div>
-        </form>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Type Selection */}
+            <div>
+              <label className="block text-sm font-semibold text-[#64748b] mb-3">
+                סוג תנועה
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, type: 'expense' }))}
+                  className={`p-4 rounded-xl border-2 font-semibold transition-all ${
+                    formData.type === 'expense'
+                      ? 'bg-[#FEF2F2] border-[#EF4444] text-[#DC2626]'
+                      : 'bg-white border-[#E5E7EB] text-[#64748b] hover:border-[#EF4444]'
+                  }`}
+                >
+                  📉 הוצאה
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, type: 'income' }))}
+                  className={`p-4 rounded-xl border-2 font-semibold transition-all ${
+                    formData.type === 'income'
+                      ? 'bg-[#ECFDF5] border-[#10B981] text-[#059669]'
+                      : 'bg-white border-[#E5E7EB] text-[#64748b] hover:border-[#10B981]'
+                  }`}
+                >
+                  📈 הכנסה
+                </button>
+              </div>
+            </div>
+
+            {/* Amount */}
+            <div>
+              <label className="block text-sm font-semibold text-[#64748b] mb-2">
+                סכום <span className="text-[#EF4444]">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={formData.amount}
+                  onChange={(e) => setFormData(prev => ({ ...prev, amount: e.target.value }))}
+                  placeholder="0"
+                  className="w-full px-4 py-3 border-2 border-[#E5E7EB] rounded-xl focus:border-[#6366F1] focus:outline-none transition-colors text-lg"
+                  step="0.01"
+                  min="0"
+                />
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#64748b] font-semibold">
+                  ₪
+                </span>
+              </div>
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="block text-sm font-semibold text-[#64748b] mb-2">
+                תיאור <span className="text-[#EF4444]">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.description}
+                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="לדוגמה: קניית חומרי בניין"
+                className="w-full px-4 py-3 border-2 border-[#E5E7EB] rounded-xl focus:border-[#6366F1] focus:outline-none transition-colors"
+              />
+            </div>
+
+            {/* Category - REQUIRED! */}
+            <div>
+              <label className="block text-sm font-semibold text-[#64748b] mb-2">
+                קטגוריה <span className="text-[#EF4444]">* חובה</span>
+              </label>
+              <select
+                value={formData.category_id}
+                onChange={(e) => handleCategoryChange(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-[#E5E7EB] rounded-xl focus:border-[#6366F1] focus:outline-none transition-colors bg-white"
+                required
+              >
+                <option value="">בחר קטגוריה...</option>
+                
+                {/* System Categories */}
+                <optgroup label="קטגוריות מערכת">
+                  {allCategories
+                    .filter((cat: Category) => !cat.isCustom)
+                    .map((cat: Category) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.icon} {cat.name}
+                      </option>
+                    ))
+                  }
+                </optgroup>
+
+                {/* Custom Categories */}
+                {allCategories.some((cat: Category) => cat.isCustom) && (
+                  <optgroup label="קטגוריות מותאמות אישית">
+                    {allCategories
+                      .filter((cat: Category) => cat.isCustom)
+                      .map((cat: Category) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.icon} {cat.name}
+                        </option>
+                      ))
+                    }
+                  </optgroup>
+                )}
+
+                {/* Add New Option */}
+                <option value="add-new" style={{ fontWeight: 'bold', borderTop: '1px solid #E5E7EB' }}>
+                  ➕ הוסף קטגוריה חדשה...
+                </option>
+              </select>
+              
+              {!formData.category_id && (
+                <p className="text-xs text-[#EF4444] mt-2">
+                  * חובה לבחור קטגוריה כדי לעקוב אחר ההוצאות בצורה מסודרת
+                </p>
+              )}
+            </div>
+
+            {/* Date */}
+            <div>
+              <label className="block text-sm font-semibold text-[#64748b] mb-2">
+                תאריך
+              </label>
+              <input
+                type="date"
+                value={formData.date}
+                onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                className="w-full px-4 py-3 border-2 border-[#E5E7EB] rounded-xl focus:border-[#6366F1] focus:outline-none transition-colors"
+              />
+            </div>
+
+            {/* Status */}
+            <div>
+              <label className="block text-sm font-semibold text-[#64748b] mb-3">
+                סטטוס
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, status: 'paid' }))}
+                  className={`p-3 rounded-xl border-2 font-semibold transition-all ${
+                    formData.status === 'paid'
+                      ? 'bg-[#ECFDF5] border-[#10B981] text-[#059669]'
+                      : 'bg-white border-[#E5E7EB] text-[#64748b] hover:border-[#10B981]'
+                  }`}
+                >
+                  ✅ שולם
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, status: 'pending' }))}
+                  className={`p-3 rounded-xl border-2 font-semibold transition-all ${
+                    formData.status === 'pending'
+                      ? 'bg-[#FEF3C7] border-[#F59E0B] text-[#92400E]'
+                      : 'bg-white border-[#E5E7EB] text-[#64748b] hover:border-[#F59E0B]'
+                  }`}
+                >
+                  ⏳ ממתין
+                </button>
+              </div>
+            </div>
+
+            {/* Buttons */}
+            <div className="flex gap-3 pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-6 py-3 bg-white border-2 border-[#E5E7EB] text-[#64748b] rounded-xl font-semibold hover:bg-[#F8FAFC] transition-colors"
+              >
+                ביטול
+              </button>
+              <button
+                type="submit"
+                disabled={addMutation.isPending}
+                className="flex-1 px-6 py-3 bg-[#6366F1] text-white rounded-xl font-semibold hover:bg-[#4F46E5] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {addMutation.isPending ? 'שומר...' : 'הוסף תנועה'}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
+
+      {/* Add Custom Category Modal */}
+      {showAddCategoryModal && (
+        <AddCustomCategoryModal
+          projectId={projectId}
+          onClose={() => setShowAddCategoryModal(false)}
+          onAdded={handleCategoryAdded}
+        />
+      )}
+    </>
   )
 }

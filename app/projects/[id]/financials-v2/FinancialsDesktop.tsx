@@ -21,7 +21,10 @@ type Tab = 'budget' | 'cashflow' | 'purchase-orders'
 
 export default function FinancialsDesktop() {
   const params = useParams()
-  const projectId = params.id as string
+  if (!params?.id) {
+  return <div>Invalid project ID</div>
+}
+const projectId = params.id as string
 
   const queryClient = useQueryClient()
   const { data: project, isLoading: projectLoading } = useProject(projectId)

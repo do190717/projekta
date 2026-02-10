@@ -18,7 +18,10 @@ type Tab = 'budget' | 'cashflow'
 
 export default function FinancialsMobile() {
   const params = useParams()
-  const projectId = params.id as string
+  if (!params?.id) {
+  return <div>Invalid project ID</div>
+}
+const projectId = params.id as string
   const queryClient = useQueryClient()
 
   const { data: project, isLoading: projectLoading } = useProject(projectId)

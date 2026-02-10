@@ -34,7 +34,10 @@ import { useDashboardAlerts } from './dashboard/hooks/useDashboardAlerts'
 export default function DashboardMobile() {
   const params = useParams()
   const router = useRouter()
-  const projectId = params.id as string
+  if (!params?.id) {
+  return <div>Invalid project ID</div>
+}
+const projectId = params.id as string
 
   // ====================================
   // 📊 Data Loading

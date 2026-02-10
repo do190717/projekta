@@ -142,7 +142,10 @@ function WorkTypeBadge({
 export default function ProjectPage() {
   
   const params = useParams()
-  const projectId = params.id as string
+  if (!params?.id) {
+  return <div>Invalid project ID</div>
+}
+const projectId = params.id as string
   const supabase = createClient()
   const isMobile = useIsMobile()
 

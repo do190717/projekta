@@ -18,7 +18,10 @@ export default function ChatV2Page() {
   const params = useParams()
   const router = useRouter()
   const isMobile = useIsMobile()
-  const projectId = params.id as string
+  if (!params?.id) {
+  return <div>Invalid project ID</div>
+}
+const projectId = params.id as string
 
   const [user, setUser] = useState<any>(null)
   const [project, setProject] = useState<any>(null)

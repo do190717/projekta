@@ -13,7 +13,10 @@ export default function MobileSidebar({ projectName, currentPage }: MobileSideba
   const router = useRouter()
   const params = useParams()
   const pathname = usePathname()
-  const projectId = params.id as string
+  if (!params?.id) {
+  return <div>Invalid project ID</div>
+}
+const projectId = params.id as string
 
   const menuItems = [
     {

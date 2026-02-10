@@ -1,50 +1,124 @@
-export default async function handler(req, res) {
+import { createClient } from '@supabase/supabase-js'
+
+// Parse WhatsApp webhook payload
+function parseWebhookPayload(body) {
+  const messages = []
+  
   try {
-    const supabaseUrl = 'https://zzaltqnpdsgjcifohjmk.supabase.co/functions/v1/wa-inbound'
-    
-    // Build URL with query parameters for GET requests  
-    let targetUrl = supabaseUrl
-    if (req.method === 'GET' && Object.keys(req.query).length > 0) {
-      const searchParams = new URLSearchParams()
-      Object.keys(req.query).forEach(key => {
-        searchParams.append(key, req.query[key])
-      })
-      targetUrl = `${supabaseUrl}?${searchParams.toString()}`
+    const entries = body?.entry || []
+    for (const entry of entries) {
+      const changes = entry?.changes || []
+      for (const change of changes) {
+        const value = change?.value
+        if (!value?.messages) continue
+
+        for (const msg of value.messages) {
+          if (msg.type === 'text') {
+            messages.push({
+              from: '+' + msg.from,
+              messageId: msg.id,
+              text: msg.text?.body || '',
+              timestamp: msg.timestamp,
+            })
+          }
+        }
+      }
     }
-    
-    console.log('Proxying to:', targetUrl)
-    
-    // Forward the request to Supabase Edge Function
-    const response = await fetch(targetUrl, {
-      method: req.method,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined
-    })
-    
-    const data = await response.text()
-    console.log('Supabase response:', response.status, data)
-    
-    // Return the exact same response from Supabase
-    res.status(response.status)
-    
-    // For webhook verification, Meta expects plain text
-    if (req.method === 'GET' && req.query['hub.challenge']) {
-      res.setHeader('Content-Type', 'text/plain')
-      return res.send(data)
-    }
-    
-    // For other requests, try JSON
-    try {
-      const jsonData = JSON.parse(data)
-      res.json(jsonData)
-    } catch {
-      res.send(data)
-    }
-    
-  } catch (error) {
-    console.error('Webhook proxy error:', error)
-    res.status(500).json({ error: 'Webhook proxy failed' })
+  } catch (err) {
+    console.error('Error parsing webhook:', err)
   }
+
+  return messages
+}
+
+export default async function handler(req, res) {
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  }
+
+  console.log('=== WA WEBHOOK START ===')
+  console.log('Method:', req.method)
+  console.log('Query:', req.query)
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).json({})
+  }
+
+  // Webhook verification (GET)
+  if (req.method === 'GET') {
+    const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query
+    
+    console.log('Verification - Mode:', mode, 'Token:', token, 'Challenge:', challenge)
+    
+    const verifyToken = process.env.WA_VERIFY_TOKEN || 'hello123'
+    console.log('Expected token:', verifyToken)
+    
+    if (mode === 'subscribe' && token === verifyToken) {
+      console.log('✅ Verification SUCCESS')
+      res.setHeader('Content-Type', 'text/plain')
+      return res.status(200).send(challenge || '')
+    } else {
+      console.log('❌ Verification FAILED')
+      return res.status(403).send('Forbidden')
+    }
+  }
+
+  // Process incoming messages (POST)
+  if (req.method === 'POST') {
+    try {
+      console.log('Processing WhatsApp message...')
+      
+      const body = req.body
+      const messages = parseWebhookPayload(body)
+      console.log('Parsed messages:', messages.length)
+
+      if (messages.length === 0) {
+        return res.status(200).json({ ok: true })
+      }
+
+      // Create Supabase client
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      )
+
+      const results = []
+      
+      for (const msg of messages) {
+        console.log(`Processing message from ${msg.from}: ${msg.text}`)
+
+        // Use the DB function to process inbound
+        const { data, error } = await supabase.rpc('v2_wa_process_inbound', {
+          p_phone_number: msg.from,
+          p_content: msg.text,
+          p_wa_message_id: msg.messageId,
+        })
+
+        if (error) {
+          console.error('RPC error:', error)
+          results.push({ phone: msg.from, error: error.message })
+          continue
+        }
+
+        if (!data?.success) {
+          console.warn('Process failed:', data?.error)
+          results.push({ phone: msg.from, error: data?.error })
+          continue
+        }
+
+        console.log(`Message saved: ${data.message_id} → project ${data.project_id}`)
+        results.push({ phone: msg.from, success: true, project: data.project_id })
+      }
+
+      return res.status(200).json({ ok: true, results })
+
+    } catch (err) {
+      console.error('WA Inbound error:', err)
+      return res.status(200).json({ ok: true, error: 'internal' })
+    }
+  }
+
+  return res.status(405).json({ error: 'Method not allowed' })
 }

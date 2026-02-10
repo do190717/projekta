@@ -2,8 +2,17 @@ export default async function handler(req, res) {
   try {
     const supabaseUrl = 'https://zzaltqnpdsgjcifohjmk.supabase.co/functions/v1/wa-inbound'
     
+    // Build URL with query parameters for GET requests
+    let targetUrl = supabaseUrl
+    if (req.method === 'GET' && Object.keys(req.query).length > 0) {
+      const searchParams = new URLSearchParams(req.query)
+      targetUrl = `${supabaseUrl}?${searchParams.toString()}`
+    }
+    
+    console.log('Proxying to:', targetUrl)
+    
     // Forward the request to Supabase Edge Function
-    const response = await fetch(supabaseUrl, {
+    const response = await fetch(targetUrl, {
       method: req.method,
       headers: {
         'Content-Type': 'application/json',
@@ -12,6 +21,8 @@ export default async function handler(req, res) {
     })
     
     const data = await response.text()
+    
+    console.log('Supabase response:', response.status, data)
     
     // Return the same status and response from Supabase
     res.status(response.status)

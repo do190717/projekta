@@ -12,34 +12,30 @@ export default async function handler(req, res) {
       targetUrl = `${supabaseUrl}?${searchParams.toString()}`
     }
     
-    console.log('Method:', req.method)
-    console.log('Query:', req.query)  
     console.log('Proxying to:', targetUrl)
     
     // Forward the request to Supabase Edge Function
     const response = await fetch(targetUrl, {
       method: req.method,
       headers: {
-        'Content-Type': req.headers['content-type'] || 'application/json',
-        'User-Agent': req.headers['user-agent'] || 'Projekta-Webhook-Proxy',
+        'Content-Type': 'application/json',
       },
-      body: req.method !== 'GET' && req.body ? JSON.stringify(req.body) : undefined
+      body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined
     })
     
     const data = await response.text()
+    console.log('Supabase response:', response.status, data)
     
-    console.log('Supabase response status:', response.status)
-    console.log('Supabase response body:', data.substring(0, 200))
-    
-    // Return the same status and response from Supabase
+    // Return the exact same response from Supabase
     res.status(response.status)
     
-    // For webhook verification, return plain text
-    if (req.query.hub_challenge || req.query['hub.challenge']) {
+    // For webhook verification, Meta expects plain text
+    if (req.method === 'GET' && req.query['hub.challenge']) {
+      res.setHeader('Content-Type', 'text/plain')
       return res.send(data)
     }
     
-    // Try to parse as JSON, fallback to text
+    // For other requests, try JSON
     try {
       const jsonData = JSON.parse(data)
       res.json(jsonData)
@@ -49,6 +45,6 @@ export default async function handler(req, res) {
     
   } catch (error) {
     console.error('Webhook proxy error:', error)
-    res.status(500).json({ error: 'Webhook proxy failed', details: error.message })
+    res.status(500).json({ error: 'Webhook proxy failed' })
   }
 }

@@ -11,10 +11,10 @@ import type {
   ChatMessageRow,
   ChatReactionRow,
   ChatAttachmentRow,
+  ForwardedFrom,
   MiniProfile,
 } from './types'
 
-const supabase = createClient()
 
 const T = {
   messages: 'v2_chat_messages',
@@ -26,9 +26,11 @@ const T = {
 const PAGE_SIZE = 50
 
 export function useChat(projectId: string | null) {
+  const supabase = createClient()
   const [messages, setMessages] = useState<ChatMessageRow[]>([])
   const [profiles, setProfiles] = useState<Record<string, MiniProfile>>({})
   const [reactions, setReactions] = useState<Record<string, ChatReactionRow[]>>({})
+  const [messageReads, setMessageReads] = useState<Record<string, string[]>>({}) // message_id → user_ids who read
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(true)
@@ -41,7 +43,7 @@ export function useChat(projectId: string | null) {
 
     const { data } = await supabase
       .from('profiles')
-      .select('id, full_name, avatar_url')
+      .select('id, full_name, avatar_url, email')
       .in('id', newIds)
 
     if (data) {
@@ -105,6 +107,25 @@ export function useChat(projectId: string | null) {
               // avoid duplicates
               if (!updated[r.message_id].find(x => x.id === r.id)) {
                 updated[r.message_id] = [...updated[r.message_id], r]
+              }
+            })
+            return updated
+          })
+        }
+
+        // טעינת reads
+        const { data: readsData } = await supabase
+          .from(T.reads)
+          .select('message_id, user_id')
+          .in('message_id', msgIds)
+
+        if (readsData) {
+          setMessageReads(prev => {
+            const updated = { ...prev }
+            readsData.forEach((r: { message_id: string; user_id: string }) => {
+              if (!updated[r.message_id]) updated[r.message_id] = []
+              if (!updated[r.message_id].includes(r.user_id)) {
+                updated[r.message_id] = [...updated[r.message_id], r.user_id]
               }
             })
             return updated
@@ -212,6 +233,41 @@ export function useChat(projectId: string | null) {
                   setReactions(grouped)
                 }
               })
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [projectId, messages])
+
+  // --- Real-time Reads ---
+  useEffect(() => {
+    if (!projectId || messages.length === 0) return
+
+    const channel = supabase
+      .channel(`v2-chat-reads:${projectId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: T.reads,
+        },
+        (payload) => {
+          const newRead = payload.new as { message_id: string; user_id: string }
+          // Only update if it's one of our loaded messages
+          if (messages.find(m => m.id === newRead.message_id)) {
+            setMessageReads(prev => {
+              const updated = { ...prev }
+              if (!updated[newRead.message_id]) updated[newRead.message_id] = []
+              if (!updated[newRead.message_id].includes(newRead.user_id)) {
+                updated[newRead.message_id] = [...updated[newRead.message_id], newRead.user_id]
+              }
+              return updated
+            })
           }
         }
       )
@@ -422,10 +478,160 @@ export function useChat(projectId: string | null) {
       })
   }, [messages])
 
+  // --- Send Voice Message ---
+  const sendVoiceMessage = useCallback(
+    async (audioBlob: Blob, duration: number): Promise<ChatMessageRow | null> => {
+      if (!projectId) return null
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) throw new Error('Not authenticated')
+
+        // 1. Create voice message immediately (shows in chat via realtime)
+        const durationText = duration < 60
+          ? `0:${Math.round(duration).toString().padStart(2, '0')}`
+          : `${Math.floor(duration / 60)}:${Math.round(duration % 60).toString().padStart(2, '0')}`
+
+        const { data: msgData, error: msgError } = await supabase
+          .from(T.messages)
+          .insert({
+            project_id: projectId,
+            user_id: user.id,
+            content: `🎤 הודעה קולית (${durationText})`,
+            message_type: 'voice',
+            metadata: { duration },
+          })
+          .select()
+          .single()
+
+        if (msgError) throw msgError
+
+        // 2. Upload audio (background — message already visible)
+        const ext = audioBlob.type.includes('webm') ? 'webm' : audioBlob.type.includes('ogg') ? 'ogg' : 'mp4'
+        const path = `${user.id}/${projectId}/${msgData.id}/voice.${ext}`
+
+        supabase.storage
+          .from('chat-attachments')
+          .upload(path, audioBlob, { contentType: audioBlob.type })
+          .then(({ error: uploadError }) => {
+            if (uploadError) {
+              console.error('Voice upload error:', uploadError)
+              return
+            }
+            const { data: urlData } = supabase.storage
+              .from('chat-attachments')
+              .getPublicUrl(path)
+
+            supabase
+              .from(T.attachments)
+              .insert({
+                message_id: msgData.id,
+                uploaded_by: user.id,
+                file_name: `voice.${ext}`,
+                file_type: audioBlob.type,
+                file_size: audioBlob.size,
+                file_url: urlData.publicUrl,
+              })
+              .then(() => {
+                // Trigger attachment refetch
+                const msgIds = messages.map(m => m.id)
+                if (!msgIds.includes(msgData.id)) msgIds.push(msgData.id)
+                supabase
+                  .from(T.attachments)
+                  .select('*')
+                  .in('message_id', msgIds)
+                  .then(({ data }) => {
+                    if (data) {
+                      const grouped: Record<string, ChatAttachmentRow[]> = {}
+                      data.forEach((a: ChatAttachmentRow) => {
+                        if (!grouped[a.message_id]) grouped[a.message_id] = []
+                        grouped[a.message_id].push(a)
+                      })
+                      setAttachments(grouped)
+                    }
+                  })
+              })
+          })
+
+        return msgData
+      } catch (err: any) {
+        setError(err.message)
+        console.error('Error sending voice:', err)
+        return null
+      }
+    },
+    [projectId, messages]
+  )
+
+  // --- Forward Message ---
+  const forwardMessage = useCallback(
+    async (
+      originalMessage: ChatMessageRow,
+      targetProjectId: string,
+      targetProjectName: string,
+      originalProjectName: string,
+      originalAttachments?: ChatAttachmentRow[]
+    ): Promise<ChatMessageRow | null> => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) throw new Error('Not authenticated')
+
+        const originalProfile = profiles[originalMessage.user_id]
+        const forwardedFrom: ForwardedFrom = {
+          original_message_id: originalMessage.id,
+          original_project_id: originalMessage.project_id,
+          original_project_name: originalProjectName,
+          original_user_id: originalMessage.user_id,
+          original_user_name: originalProfile?.full_name || 'משתמש',
+          original_created_at: originalMessage.created_at,
+        }
+
+        // Create forwarded message in target project
+        const { data: msgData, error: msgError } = await supabase
+          .from(T.messages)
+          .insert({
+            project_id: targetProjectId,
+            user_id: user.id,
+            content: originalMessage.content,
+            message_type: 'forwarded',
+            metadata: originalMessage.metadata,
+            forwarded_from: forwardedFrom,
+          })
+          .select()
+          .single()
+
+        if (msgError) throw msgError
+
+        // Copy attachments if any
+        if (originalAttachments && originalAttachments.length > 0) {
+          for (const att of originalAttachments) {
+            await supabase
+              .from(T.attachments)
+              .insert({
+                message_id: msgData.id,
+                uploaded_by: user.id,
+                file_name: att.file_name,
+                file_type: att.file_type,
+                file_size: att.file_size,
+                file_url: att.file_url, // reuse same Storage URL
+              })
+          }
+        }
+
+        return msgData
+      } catch (err: any) {
+        setError(err.message)
+        console.error('Error forwarding:', err)
+        return null
+      }
+    },
+    [profiles]
+  )
+
   return {
     messages,
     profiles,
     reactions,
+    messageReads,
     attachments,
     loading,
     error,
@@ -433,6 +639,8 @@ export function useChat(projectId: string | null) {
     loadMore,
     sendMessage,
     uploadAndSend,
+    sendVoiceMessage,
+    forwardMessage,
     deleteMessage,
     addReaction,
     removeReaction,

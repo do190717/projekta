@@ -9,7 +9,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import Toast from '../../../Toast'
+import { showSuccess, showError } from '@/app/utils/toast'
 import MobileSidebar from '../components/MobileSidebar'
 import Sidebar from '../components/Sidebar'
 
@@ -886,7 +886,6 @@ export default function FilesPage() {
         )}
 
         <input type="file" ref={fileInputRef} onChange={handleFileSelect} style={{ display: 'none' }} />
-        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
         </div> {/* סגירה של wrapper עם marginRight */}
       </div> {/* סגירה של flex container */}
     </>

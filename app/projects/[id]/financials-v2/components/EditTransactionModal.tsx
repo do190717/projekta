@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { useCategories } from '@/hooks/useQueries'
+import { useQueryClient } from '@tanstack/react-query'
+import { useProjectCategories } from '@/hooks/useProjectCategories'
 import { createClient } from '@/lib/supabase'
 import { showSuccess, showError } from '@/app/utils/toast'
 
@@ -14,7 +15,8 @@ interface Props {
 }
 
 export function EditTransactionModal({ projectId, transaction, onClose }: Props) {
-  const { data: categories = [] } = useCategories()
+  const { data: categories = [] } = useProjectCategories(projectId)
+  const queryClient = useQueryClient()
 
   const [formData, setFormData] = useState({
     type: transaction.type as 'income' | 'expense',
@@ -28,6 +30,11 @@ export function EditTransactionModal({ projectId, transaction, onClose }: Props)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+  function invalidateFinancials() {
+    queryClient.invalidateQueries({ queryKey: ['cash-flow-v2', projectId] })
+    queryClient.invalidateQueries({ queryKey: ['financials-overview', projectId] })
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -57,8 +64,8 @@ export function EditTransactionModal({ projectId, transaction, onClose }: Props)
       if (updateError) throw updateError
 
       showSuccess('✅ התנועה עודכנה בהצלחה!')
+      invalidateFinancials()
       onClose()
-      window.location.reload() // Refresh to show changes
     } catch (err: any) {
       setError(err.message || 'שגיאה בעדכון תנועה')
       showError('שגיאה בעדכון תנועה')
@@ -79,8 +86,8 @@ export function EditTransactionModal({ projectId, transaction, onClose }: Props)
       if (deleteError) throw deleteError
 
       showSuccess('✅ התנועה נמחקה בהצלחה!')
+      invalidateFinancials()
       onClose()
-      window.location.reload() // Refresh to show changes
     } catch (err: any) {
       setError(err.message || 'שגיאה במחיקת תנועה')
       showError('שגיאה במחיקת תנועה')
@@ -88,8 +95,6 @@ export function EditTransactionModal({ projectId, transaction, onClose }: Props)
       setShowDeleteConfirm(false)
     }
   }
-
-  const filteredCategories = categories.filter(cat => cat.type === formData.type)
 
   if (showDeleteConfirm) {
     return (
@@ -207,7 +212,7 @@ export function EditTransactionModal({ projectId, transaction, onClose }: Props)
               className="w-full p-3 text-base border-2 border-[#E5E7EB] rounded-xl focus:border-[#6366F1] focus:outline-none bg-white"
             >
               <option value="">ללא קטגוריה</option>
-              {filteredCategories.map(cat => (
+              {categories.map(cat => (
                 <option key={cat.id} value={cat.id}>
                   {cat.icon} {cat.name}
                 </option>

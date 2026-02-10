@@ -2,9 +2,9 @@
 
 import { useState } from 'react'
 import { useAddCashFlowTransaction } from '@/hooks/useFinancialsQueries'
-import { useAllCategories, Category } from '@/hooks/useAllCategories'
+import { useProjectCategories, ProjectCategory } from '@/hooks/useProjectCategories'
 import AddCustomCategoryModal from './AddCustomCategoryModal'
-import { useToast } from '@/app/ToastContext'
+import { showSuccess, showError } from '@/app/utils/toast'
 
 interface Props {
   projectId: string
@@ -13,9 +13,8 @@ interface Props {
 }
 
 export function AddTransactionModal({ projectId, onClose, onAddContractItem }: Props) {
-  const { categories: allCategories, addCategory } = useAllCategories(projectId)
+  const { data: allCategories = [] } = useProjectCategories(projectId)
   const addMutation = useAddCashFlowTransaction()
-  const toast = useToast()
 
   const [formData, setFormData] = useState({
     type: 'expense' as 'income' | 'expense',
@@ -32,13 +31,13 @@ export function AddTransactionModal({ projectId, onClose, onAddContractItem }: P
     e.preventDefault()
 
     if (!formData.amount || !formData.description) {
-      toast.error('נא למלא את כל השדות החובה')
+      showError('נא למלא את כל השדות החובה')
       return
     }
 
     // ✅ קטגוריה חובה!
     if (!formData.category_id) {
-      toast.error('חובה לבחור קטגוריה')
+      showError('חובה לבחור קטגוריה')
       return
     }
 
@@ -52,11 +51,12 @@ export function AddTransactionModal({ projectId, onClose, onAddContractItem }: P
         date: formData.date,
         status: formData.status,
         created_by: null,
+          notes: null,
       })
-      toast.success('✅ תנועה נוספה בהצלחה!')
+      showSuccess('✅ תנועה נוספה בהצלחה!')
       onClose()
     } catch (err: any) {
-      toast.error(err.message || 'שגיאה בהוספת תנועה')
+      showError(err.message || 'שגיאה בהוספת תנועה')
     }
   }
 
@@ -69,7 +69,6 @@ export function AddTransactionModal({ projectId, onClose, onAddContractItem }: P
   }
 
   const handleCategoryAdded = (category: { id: string; name: string; icon: string }) => {
-    addCategory(category)
     setFormData(prev => ({ ...prev, category_id: category.id }))
   }
 
@@ -178,8 +177,8 @@ export function AddTransactionModal({ projectId, onClose, onAddContractItem }: P
                 {/* System Categories */}
                 <optgroup label="קטגוריות מערכת">
                   {allCategories
-                    .filter((cat: Category) => !cat.isCustom)
-                    .map((cat: Category) => (
+                    .filter((cat: ProjectCategory) => cat.is_system)
+                    .map((cat: ProjectCategory) => (
                       <option key={cat.id} value={cat.id}>
                         {cat.icon} {cat.name}
                       </option>
@@ -188,11 +187,11 @@ export function AddTransactionModal({ projectId, onClose, onAddContractItem }: P
                 </optgroup>
 
                 {/* Custom Categories */}
-                {allCategories.some((cat: Category) => cat.isCustom) && (
+                {allCategories.some((cat: ProjectCategory) => !cat.is_system) && (
                   <optgroup label="קטגוריות מותאמות אישית">
                     {allCategories
-                      .filter((cat: Category) => cat.isCustom)
-                      .map((cat: Category) => (
+                      .filter((cat: ProjectCategory) => !cat.is_system)
+                      .map((cat: ProjectCategory) => (
                         <option key={cat.id} value={cat.id}>
                           {cat.icon} {cat.name}
                         </option>

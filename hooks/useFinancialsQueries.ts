@@ -1,13 +1,12 @@
 // ====================================
 // 📦 FINANCIALS V2 QUERIES
 // ====================================
-// React Query hooks for new financials system
+// React Query hooks for unified financials system
 // ====================================
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase'
 
-const supabase = createClient()
 
 // ====================================
 // 📘 TYPES
@@ -21,12 +20,6 @@ export interface ContractItem {
   description: string | null
   created_at: string
   updated_at: string
-  category?: {
-    id: string
-    name: string
-    icon: string
-    color: string
-  }
 }
 
 export interface CashFlowTransaction {
@@ -38,27 +31,39 @@ export interface CashFlowTransaction {
   category_id: string | null
   date: string
   status: 'paid' | 'pending'
+  notes: string | null
   created_by: string | null
   created_at: string
   updated_at: string
-  category?: {
-    id: string
-    name: string
-    icon: string
-    color: string
-  }
 }
 
 export interface FinancialCategory {
+  contract_item_id: string
   category_id: string
   category_name: string
   category_icon: string
   category_color: string
+  is_system: boolean
+  sort_order: number
   contract_amount: number
   actual_expenses: number
   received_income: number
+  pending_expenses: number
+  pending_income: number
+  committed_amount: number
+  // Computed client-side from the above
   expected_profit: number
   pending_amount: number
+}
+
+export interface FinancialsTotals {
+  totalContract: number
+  totalExpenses: number
+  totalIncome: number
+  totalCommitted: number
+  expectedProfit: number
+  pendingFromClient: number
+  percentageComplete: number
 }
 
 // ====================================
@@ -69,6 +74,7 @@ export interface FinancialCategory {
  * Get all contract items for a project
  */
 export function useContractItems(projectId: string) {
+  const supabase = createClient()
   return useQuery({
     queryKey: ['contract-items', projectId],
     queryFn: async () => {
@@ -89,6 +95,7 @@ export function useContractItems(projectId: string) {
  * Get all cash flow transactions for a project
  */
 export function useCashFlowV2(projectId: string) {
+  const supabase = createClient()
   return useQuery({
     queryKey: ['cash-flow-v2', projectId],
     queryFn: async () => {
@@ -106,89 +113,76 @@ export function useCashFlowV2(projectId: string) {
 }
 
 /**
- * Get financial overview (aggregated data)
+ * Get financial overview from DB VIEW (all calculations server-side)
+ * 
+ * BEFORE: 2 separate queries + ~60 lines of client-side calculations
+ * AFTER: 1 query from financials_overview_v2 VIEW
  */
 export function useFinancialsOverview(projectId: string) {
+  const supabase = createClient()
   return useQuery({
     queryKey: ['financials-overview', projectId],
     queryFn: async () => {
-      // Get all contract items
-      const { data: contractItems, error: contractError } = await supabase
-        .from('contract_items')
+      const { data, error } = await supabase
+        .from('financials_overview_v2')
         .select('*')
         .eq('project_id', projectId)
 
-      if (contractError) throw contractError
+      if (error) throw error
 
-      // Get all cash flow transactions
-      const { data: transactions, error: transError } = await supabase
-        .from('cash_flow_v2')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('status', 'paid')
+      const rows = data || []
 
-      if (transError) throw transError
+      // Map DB rows to typed categories
+      const categories: FinancialCategory[] = rows.map(row => ({
+        contract_item_id: row.contract_item_id,
+        category_id: row.category_id,
+        category_name: row.category_name,
+        category_icon: row.category_icon,
+        category_color: row.category_color,
+        is_system: row.is_system,
+        sort_order: row.sort_order,
+        contract_amount: Number(row.contract_amount),
+        actual_expenses: Number(row.actual_expenses),
+        received_income: Number(row.received_income),
+        pending_expenses: Number(row.pending_expenses),
+        pending_income: Number(row.pending_income),
+        committed_amount: Number(row.committed_amount),
+        // Derived
+        expected_profit: Number(row.contract_amount) - Number(row.actual_expenses),
+        pending_amount: Number(row.contract_amount) - Number(row.received_income),
+      }))
 
-      // Calculate totals
-      const totalContract = contractItems?.reduce((sum, item) => 
-        sum + Number(item.contract_amount || 0), 0
-      ) || 0
+      // Totals — simple reduce over pre-calculated rows
+      const totalContract = categories.reduce((s, c) => s + c.contract_amount, 0)
+      const totalExpenses = categories.reduce((s, c) => s + c.actual_expenses, 0)
+      const totalIncome = categories.reduce((s, c) => s + c.received_income, 0)
+      const totalCommitted = categories.reduce((s, c) => s + c.committed_amount, 0)
 
-      const totalExpenses = transactions
-        ?.filter(t => t.type === 'expense')
-        .reduce((sum, t) => sum + Number(t.amount || 0), 0) || 0
-
-      const totalIncome = transactions
-        ?.filter(t => t.type === 'income')
-        .reduce((sum, t) => sum + Number(t.amount || 0), 0) || 0
-
-      const expectedProfit = totalContract - totalExpenses
-      const pendingFromClient = totalContract - totalIncome
-      const percentageComplete = totalContract > 0 ? (totalExpenses / totalContract) * 100 : 0
-
-      // Calculate per category
-      const categories: FinancialCategory[] = contractItems?.map(item => {
-        const categoryExpenses = transactions
-          ?.filter(t => t.type === 'expense' && t.category_id === item.category_id)
-          .reduce((sum, t) => sum + Number(t.amount || 0), 0) || 0
-
-        const categoryIncome = transactions
-          ?.filter(t => t.type === 'income' && t.category_id === item.category_id)
-          .reduce((sum, t) => sum + Number(t.amount || 0), 0) || 0
-
-        return {
-          category_id: item.category_id,
-          category_name: item.category?.name || '',
-          category_icon: item.category?.icon || '📦',
-          category_color: item.category?.color || '#6366F1',
-          contract_amount: Number(item.contract_amount || 0),
-          actual_expenses: categoryExpenses,
-          received_income: categoryIncome,
-          expected_profit: Number(item.contract_amount || 0) - categoryExpenses,
-          pending_amount: Number(item.contract_amount || 0) - categoryIncome,
-        }
-      }) || []
-
-      return {
-        totals: {
-          totalContract,
-          totalExpenses,
-          totalIncome,
-          expectedProfit,
-          pendingFromClient,
-          percentageComplete,
-        },
-        categories,
+      const totals: FinancialsTotals = {
+        totalContract,
+        totalExpenses,
+        totalIncome,
+        totalCommitted,
+        expectedProfit: totalContract - totalExpenses,
+        pendingFromClient: totalContract - totalIncome,
+        percentageComplete: totalContract > 0 ? (totalExpenses / totalContract) * 100 : 0,
       }
+
+      return { totals, categories }
     },
     enabled: !!projectId,
   })
 }
 
+// ====================================
+// ✏️ CONTRACT ITEM MUTATIONS
+// ====================================
+
 /**
  * Add a contract item
  */
 export function useAddContractItem() {
+  const supabase = createClient()
   const queryClient = useQueryClient()
 
   return useMutation({
@@ -210,9 +204,69 @@ export function useAddContractItem() {
 }
 
 /**
+ * Update a contract item
+ */
+export function useUpdateContractItem() {
+  const supabase = createClient()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      id,
+      updates,
+    }: {
+      id: string
+      updates: Partial<Omit<ContractItem, 'id' | 'created_at' | 'updated_at'>>
+    }) => {
+      const { data, error } = await supabase
+        .from('contract_items')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['contract-items', data.project_id] })
+      queryClient.invalidateQueries({ queryKey: ['financials-overview', data.project_id] })
+    },
+  })
+}
+
+/**
+ * Delete a contract item
+ */
+export function useDeleteContractItem() {
+  const supabase = createClient()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, projectId }: { id: string; projectId: string }) => {
+      const { error } = await supabase
+        .from('contract_items')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['contract-items', variables.projectId] })
+      queryClient.invalidateQueries({ queryKey: ['financials-overview', variables.projectId] })
+    },
+  })
+}
+
+// ====================================
+// 💳 CASH FLOW MUTATIONS
+// ====================================
+
+/**
  * Add a cash flow transaction
  */
 export function useAddCashFlowTransaction() {
+  const supabase = createClient()
   const queryClient = useQueryClient()
 
   return useMutation({
@@ -237,6 +291,7 @@ export function useAddCashFlowTransaction() {
  * Delete a cash flow transaction
  */
 export function useDeleteCashFlowTransaction() {
+  const supabase = createClient()
   const queryClient = useQueryClient()
 
   return useMutation({
@@ -254,22 +309,74 @@ export function useDeleteCashFlowTransaction() {
     },
   })
 }
+
+// ====================================
+// 📦 PURCHASE ORDER HOOKS
+// (Moved from useQueries.ts, updated invalidations)
+// ====================================
+
 /**
- * Update a contract item
+ * Get purchase orders for a project (optionally filtered by category)
  */
-export function useUpdateContractItem() {
+export function usePurchaseOrders(projectId: string, categoryId?: string) {
+  const supabase = createClient()
+  return useQuery({
+    queryKey: ['purchase-orders', projectId, categoryId],
+    queryFn: async () => {
+      let query = supabase
+        .from('purchase_orders')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('order_date', { ascending: false })
+
+      if (categoryId) {
+        query = query.eq('category_id', categoryId)
+      }
+
+      const { data, error } = await query
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!projectId,
+  })
+}
+
+/**
+ * Add a purchase order
+ */
+export function useAddPurchaseOrder() {
+  const supabase = createClient()
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ 
-      id, 
-      updates 
-    }: { 
-      id: string
-      updates: Partial<Omit<ContractItem, 'id' | 'created_at' | 'updated_at'>> 
-    }) => {
+    mutationFn: async (po: any) => {
       const { data, error } = await supabase
-        .from('contract_items')
+        .from('purchase_orders')
+        .insert(po)
+        .select()
+        .single()
+
+      if (error) throw error
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders', data.project_id] })
+      queryClient.invalidateQueries({ queryKey: ['financials-overview', data.project_id] })
+    },
+  })
+}
+
+/**
+ * Update a purchase order
+ */
+export function useUpdatePurchaseOrder() {
+  const supabase = createClient()
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: any }) => {
+      const { data, error } = await supabase
+        .from('purchase_orders')
         .update(updates)
         .eq('id', id)
         .select()
@@ -279,30 +386,8 @@ export function useUpdateContractItem() {
       return data
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['contract-items', data.project_id] })
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders', data.project_id] })
       queryClient.invalidateQueries({ queryKey: ['financials-overview', data.project_id] })
-    },
-  })
-}
-
-/**
- * Delete a contract item
- */
-export function useDeleteContractItem() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: async ({ id, projectId }: { id: string; projectId: string }) => {
-      const { error } = await supabase
-        .from('contract_items')
-        .delete()
-        .eq('id', id)
-
-      if (error) throw error
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['contract-items', variables.projectId] })
-      queryClient.invalidateQueries({ queryKey: ['financials-overview', variables.projectId] })
     },
   })
 }

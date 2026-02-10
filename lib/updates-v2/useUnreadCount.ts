@@ -1,71 +1,111 @@
 // ===========================================
 // Projekta Chat v2 — useUnreadCount Hook
 // ===========================================
-// ספירת הודעות שלא נקראו — מבוסס v2_chat_reads
-// הודעה "נקראה" = יש לה record ב-v2_chat_reads
+// ספירת הודעות שלא נקראו — מבוסס RPC
+// סנכרון בין components עם BroadcastChannel
 // ===========================================
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 
-const supabase = createClient()
+
+// BroadcastChannel לסנכרון בין instances (Sidebar ↔ SmartChat)
+const CHANNEL_NAME = 'projekta-unread-sync'
+
+function getBroadcast(): BroadcastChannel | null {
+  try {
+    return new BroadcastChannel(CHANNEL_NAME)
+  } catch {
+    return null // SSR or unsupported
+  }
+}
 
 export function useUnreadCount(projectId: string | null) {
+  const supabase = createClient()
   const [unreadCount, setUnreadCount] = useState(0)
-  const [userId, setUserId] = useState<string | null>(null)
+  const broadcastRef = useRef<BroadcastChannel | null>(null)
 
-  // Get current user
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUserId(data?.user?.id || null)
-    })
-  }, [])
-
+  // --- Fetch unread count via RPC ---
   const fetchUnread = useCallback(async () => {
-    if (!projectId || !userId) return
+    if (!projectId) return
 
     try {
-      // RPC: ספור הודעות של אחרים שאין להן read record שלי
-      // כי אין RPC, נעשה את זה ב-2 queries
-      
-      // 1. כל ההודעות של אחרים (לא שלי, לא מחוקות)
-      const { data: otherMsgs } = await supabase
-        .from('v2_chat_messages')
-        .select('id')
-        .eq('project_id', projectId)
-        .neq('user_id', userId)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-        .limit(100)
+      const { data, error } = await supabase.rpc('v2_get_unread_count', {
+        p_project_id: projectId,
+      })
 
-      if (!otherMsgs || otherMsgs.length === 0) {
-        setUnreadCount(0)
+      if (error) {
+        console.error('Unread count error:', error)
         return
       }
 
-      // 2. מתוכן, מה כבר נקרא
-      const msgIds = otherMsgs.map(m => m.id)
-      const { data: readMsgs } = await supabase
-        .from('v2_chat_reads')
-        .select('message_id')
-        .eq('user_id', userId)
-        .in('message_id', msgIds)
-
-      const readSet = new Set((readMsgs || []).map(r => r.message_id))
-      const unread = msgIds.filter(id => !readSet.has(id))
-
-      setUnreadCount(unread.length)
+      const count = data ?? 0
+      setUnreadCount(count)
+      return count
     } catch (err) {
-      // silent
+      console.error('Unread count fetch failed:', err)
     }
-  }, [projectId, userId])
+  }, [projectId])
 
-  // Initial fetch
+  // --- Mark all as read via RPC ---
+  const markAllRead = useCallback(async () => {
+    if (!projectId) return
+
+    try {
+      const { error } = await supabase.rpc('v2_mark_chat_read', {
+        p_project_id: projectId,
+      })
+
+      if (error) {
+        console.error('Mark read error:', error)
+        return
+      }
+
+      // Update local state immediately
+      setUnreadCount(0)
+
+      // Notify other instances (e.g. Sidebar)
+      try {
+        broadcastRef.current?.postMessage({
+          type: 'mark_read',
+          projectId,
+        })
+      } catch {
+        // ignore
+      }
+    } catch (err) {
+      console.error('Mark read failed:', err)
+    }
+  }, [projectId])
+
+  // --- BroadcastChannel listener ---
+  useEffect(() => {
+    const bc = getBroadcast()
+    broadcastRef.current = bc
+    if (!bc) return
+
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'mark_read' && event.data?.projectId === projectId) {
+        setUnreadCount(0)
+      }
+      if (event.data?.type === 'new_message' && event.data?.projectId === projectId) {
+        fetchUnread()
+      }
+    }
+
+    bc.addEventListener('message', handler)
+    return () => {
+      bc.removeEventListener('message', handler)
+      bc.close()
+    }
+  }, [projectId, fetchUnread])
+
+  // --- Initial fetch ---
   useEffect(() => {
     fetchUnread()
   }, [fetchUnread])
 
-  // Realtime - new messages
+  // --- Realtime: new messages trigger recount ---
   useEffect(() => {
     if (!projectId) return
 
@@ -80,6 +120,15 @@ export function useUnreadCount(projectId: string | null) {
         },
         () => {
           fetchUnread()
+          // Notify other instances
+          try {
+            broadcastRef.current?.postMessage({
+              type: 'new_message',
+              projectId,
+            })
+          } catch {
+            // ignore
+          }
         }
       )
       .subscribe()
@@ -89,5 +138,5 @@ export function useUnreadCount(projectId: string | null) {
     }
   }, [projectId, fetchUnread])
 
-  return { unreadCount, refreshUnread: fetchUnread }
+  return { unreadCount, markAllRead, refreshUnread: fetchUnread }
 }

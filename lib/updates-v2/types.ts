@@ -10,10 +10,24 @@ export interface ChatMessageRow {
   user_id: string
   content: string
   reply_to: string | null
-  message_type: 'message' | 'system' | 'ai_card'
-  metadata: AICardMetadata | null
+  message_type: 'message' | 'system' | 'ai_card' | 'voice' | 'forwarded'
+  metadata: AICardMetadata | VoiceMetadata | null
+  forwarded_from: ForwardedFrom | null
   deleted_at: string | null
   created_at: string
+}
+
+export interface VoiceMetadata {
+  duration: number  // seconds
+}
+
+export interface ForwardedFrom {
+  original_message_id: string
+  original_project_id: string
+  original_project_name: string
+  original_user_id: string
+  original_user_name: string
+  original_created_at: string
 }
 
 export interface ChatReactionRow {
@@ -118,6 +132,7 @@ export interface MiniProfile {
   id: string
   full_name: string | null
   avatar_url: string | null
+  email: string | null
 }
 
 // --- UI State ---

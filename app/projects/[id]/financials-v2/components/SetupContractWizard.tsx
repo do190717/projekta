@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useCategories } from '@/hooks/useQueries'
+import { useProjectCategories } from '@/hooks/useProjectCategories'
 import { useAddContractItem, useContractItems } from '@/hooks/useFinancialsQueries'
 import { createClient } from '@/lib/supabase'
 
@@ -25,7 +25,7 @@ interface CategoryItem {
 }
 
 export function SetupContractWizard({ projectId, currentContractValue, onClose, onComplete }: Props) {
-  const { data: categories = [] } = useCategories('expense')
+  const { data: categories = [] } = useProjectCategories(projectId)
   const { data: existingItems = [] } = useContractItems(projectId)
   const addMutation = useAddContractItem()
 

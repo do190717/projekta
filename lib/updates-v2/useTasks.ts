@@ -8,7 +8,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 
-const supabase = createClient()
 
 // --- Types ---
 
@@ -44,6 +43,7 @@ export interface ChatDecision {
 // --- Hook ---
 
 export function useTasks(projectId: string | null) {
+  const supabase = createClient()
   const [tasks, setTasks] = useState<ChatTask[]>([])
   const [decisions, setDecisions] = useState<ChatDecision[]>([])
   const [loading, setLoading] = useState(true)

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { useToast } from '@/app/ToastContext'
+import { showSuccess, showError } from '@/app/utils/toast'
 
 interface AddCustomCategoryModalProps {
   projectId: string
@@ -22,13 +22,12 @@ export default function AddCustomCategoryModal({
   const [name, setName] = useState('')
   const [icon, setIcon] = useState('📦')
   const [saving, setSaving] = useState(false)
-  const toast = useToast()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!name.trim()) {
-      toast.error('נא להזין שם קטגוריה')
+      showError('נא להזין שם קטגוריה')
       return
     }
 
@@ -48,7 +47,7 @@ export default function AddCustomCategoryModal({
 
       if (error) throw error
 
-      toast.success('✅ קטגוריה נוספה בהצלחה!')
+      showSuccess('✅ קטגוריה נוספה בהצלחה!')
       onAdded({
         id: data.id,
         name: data.name,
@@ -58,9 +57,9 @@ export default function AddCustomCategoryModal({
     } catch (error: any) {
       console.error('Error adding custom category:', error)
       if (error.code === '23505') {
-        toast.error('קטגוריה עם שם זה כבר קיימת')
+        showError('קטגוריה עם שם זה כבר קיימת')
       } else {
-        toast.error('שגיאה בהוספת קטגוריה')
+        showError('שגיאה בהוספת קטגוריה')
       }
     } finally {
       setSaving(false)

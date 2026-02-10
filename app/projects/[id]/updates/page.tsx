@@ -11,7 +11,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import Toast from '@/app/Toast'
+import { showSuccess, showError } from '@/app/utils/toast'
 import WhatsAppChat from '@/components/WhatsAppChat'
 import { useIsMobile } from '@/hooks/useIsMobile'
 import Sidebar from '../components/Sidebar'
@@ -157,7 +157,6 @@ export default function ProjectPage() {
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
   const [userRole, setUserRole] = useState<string>('viewer')
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
   
   // Updates State
   const [updates, setUpdates] = useState<any[]>([])
@@ -448,10 +447,10 @@ export default function ProjectPage() {
       setShowFileSelector(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
       
-      setToast({ message: updatesToSend.length > 1 ? `נוספו ${updatesToSend.length} עדכונים!` : 'העדכון נוסף!', type: 'success' })
+      showSuccess(updatesToSend.length > 1 ? `נוספו ${updatesToSend.length} עדכונים!` : 'העדכון נוסף!')
       fetchUpdates()
     } catch (error) {
-      setToast({ message: 'שגיאה בשליחה', type: 'error' })
+      showError('שגיאה בשליחה')
     }
     
     setSending(false)
@@ -459,21 +458,21 @@ export default function ProjectPage() {
 
   const updateStatus = async (updateId: string, newStatus: UpdateStatusId) => {
     await supabase.from('updates').update({ status: newStatus }).eq('id', updateId)
-    setToast({ message: `הסטטוס עודכן ל${UPDATE_STATUSES[newStatus].name}`, type: 'success' })
+    showSuccess(`הסטטוס עודכן ל${UPDATE_STATUSES[newStatus].name}`)
     fetchUpdates()
   }
 
   const updateWorkType = async (updateId: string, newWorkType: WorkTypeId) => {
     await supabase.from('updates').update({ work_type: newWorkType }).eq('id', updateId)
     setWorkTypeMenuUpdateId(null)
-    setToast({ message: `סוג העבודה עודכן ל${WORK_TYPES[newWorkType].name}`, type: 'success' })
+    showSuccess(`סוג העבודה עודכן ל${WORK_TYPES[newWorkType].name}`)
     fetchUpdates()
   }
 
   const deleteUpdate = async (updateId: string) => {
     if (!confirm('למחוק את העדכון?')) return
     await supabase.from('updates').delete().eq('id', updateId)
-    setToast({ message: 'העדכון נמחק', type: 'success' })
+    showSuccess('העדכון נמחק')
     fetchUpdates()
   }
   
@@ -533,7 +532,7 @@ export default function ProjectPage() {
       fetchComments(chatUpdateId)
       fetchImages(chatUpdateId)
     } catch (error) {
-      setToast({ message: 'שגיאה בשליחת ההודעה', type: 'error' })
+      showError('שגיאה בשליחת ההודעה')
     }
   }
   
@@ -543,7 +542,7 @@ export default function ProjectPage() {
       await supabase.from('comments').update({ deleted_at: new Date().toISOString() }).eq('id', messageId)
       fetchComments(chatUpdateId)
     } catch (error) {
-      setToast({ message: 'שגיאה במחיקת ההודעה', type: 'error' })
+      showError('שגיאה במחיקת ההודעה')
     }
   }
   
@@ -603,14 +602,14 @@ export default function ProjectPage() {
         unit: fileUploadData.unit || null, description: fileUploadData.description || null,
       })
       
-      setToast({ message: 'הקובץ הועלה בהצלחה!', type: 'success' })
+      showSuccess('הקובץ הועלה בהצלחה!')
       setShowFileUpload(false)
       setFileToUpload(null)
       setFileUploadData({ trade: 'general', floor: 'general', stage: 'planning', unit: '', description: '' })
       if (projectFileInputRef.current) projectFileInputRef.current.value = ''
       fetchProjectFiles()
     } catch (error) {
-      setToast({ message: 'שגיאה בהעלאת הקובץ', type: 'error' })
+      showError('שגיאה בהעלאת הקובץ')
     }
     setUploadingFile(false)
   }
@@ -621,11 +620,11 @@ export default function ProjectPage() {
       const filePath = file.file_url.split('/project-files/')[1]
       if (filePath) await supabase.storage.from('project-files').remove([filePath])
       await supabase.from('project_files').delete().eq('id', file.id)
-      setToast({ message: 'הקובץ נמחק', type: 'success' })
+      showSuccess('הקובץ נמחק')
       if (selectedFile?.id === file.id) setSelectedFile(null)
       fetchProjectFiles()
     } catch (error) {
-      setToast({ message: 'שגיאה במחיקה', type: 'error' })
+      showError('שגיאה במחיקה')
     }
   }
   
@@ -654,7 +653,7 @@ export default function ProjectPage() {
         const { data: existingUser } = await supabase.from('profiles').select('id').eq('phone', contact.phone).single()
         if (existingUser) {
           await supabase.from('project_members').insert({ project_id: projectId, user_id: existingUser.id, role: inviteRole })
-          setToast({ message: 'המשתמש נוסף לפרויקט!', type: 'success' })
+          showSuccess('המשתמש נוסף לפרויקט!')
           setInviteContact('')
           fetchTeamMembers()
           setInviting(false)
@@ -665,10 +664,10 @@ export default function ProjectPage() {
       const token = generateToken()
       await supabase.from('invitations').insert({ project_id: projectId, invited_by: user?.id, ...contact, role: inviteRole, token })
       setGeneratedLink(`${window.location.origin}/invite/${token}`)
-      setToast({ message: 'הזמנה נוצרה!', type: 'success' })
+      showSuccess('הזמנה נוצרה!')
       fetchInvitations()
     } catch (error) {
-      setToast({ message: 'שגיאה ביצירת הזמנה', type: 'error' })
+      showError('שגיאה ביצירת הזמנה')
     }
     setInviting(false)
   }
@@ -676,7 +675,7 @@ export default function ProjectPage() {
   const copyLink = () => { 
     if (generatedLink) { 
       navigator.clipboard.writeText(generatedLink)
-      setToast({ message: 'הלינק הועתק!', type: 'success' }) 
+      showSuccess('הלינק הועתק!') 
     } 
   }
   
@@ -695,7 +694,7 @@ export default function ProjectPage() {
   
   const cancelInvitation = async (invId: string) => { 
     await supabase.from('invitations').delete().eq('id', invId)
-    setToast({ message: 'ההזמנה בוטלה', type: 'success' })
+    showSuccess('ההזמנה בוטלה')
     fetchInvitations() 
   }
   
@@ -707,7 +706,7 @@ export default function ProjectPage() {
   const removeMember = async (memberId: string) => { 
     if (!confirm('להסיר את חבר הצוות?')) return
     await supabase.from('project_members').delete().eq('id', memberId)
-    setToast({ message: 'חבר הצוות הוסר', type: 'success' })
+    showSuccess('חבר הצוות הוסר')
     fetchTeamMembers() 
   }
 
@@ -1296,8 +1295,6 @@ export default function ProjectPage() {
           </div>
         )}
 
-        {/* Toast */}
-        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       </div>
       </div>
     </>

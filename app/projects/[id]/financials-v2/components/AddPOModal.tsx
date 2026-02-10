@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { showSuccess, showError } from '@/app/utils/toast'
 import { createClient } from '@/lib/supabase'
 import type { DeliveryStatus, PaymentStatus, PaymentMethod } from '@/types/budget'
 import { PAYMENT_METHOD_LABELS, PAYMENT_METHOD_ICONS } from '@/types/budget'
@@ -21,6 +23,7 @@ export default function AddPOModal({
   onSuccess,
 }: AddPOModalProps) {
   const supabase = createClient()
+  const queryClient = useQueryClient()
   
   const [formData, setFormData] = useState({
     category_id: categoryId || '',
@@ -88,10 +91,15 @@ export default function AddPOModal({
       
       if (insertError) throw insertError
       
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['financials-overview', projectId] })
+    
+      showSuccess('✅ הזמנת הרכש נשמרה')
       onSuccess()
       onClose()
     } catch (err: any) {
       setError(err.message || 'שגיאה בשמירת הזמנה')
+      showError('שגיאה בשמירת הזמנה')
     } finally {
       setSaving(false)
     }

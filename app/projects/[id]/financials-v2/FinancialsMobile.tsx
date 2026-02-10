@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
 import MobileSidebar from '../components/MobileSidebar'
-import { useProject, useCategories } from '@/hooks/useQueries'
+import { useProject } from '@/hooks/useQueries'
 import { useFinancialsOverview, useCashFlowV2, useContractItems } from '@/hooks/useFinancialsQueries'
 import { AddTransactionModal } from './components/AddTransactionModal'
 import { AddContractItemModal } from './components/AddContractItemModal'
@@ -18,6 +19,7 @@ type Tab = 'budget' | 'cashflow'
 export default function FinancialsMobile() {
   const params = useParams()
   const projectId = params.id as string
+  const queryClient = useQueryClient()
 
   const { data: project, isLoading: projectLoading } = useProject(projectId)
   const { data: overview, isLoading: overviewLoading } = useFinancialsOverview(projectId)
@@ -200,7 +202,10 @@ export default function FinancialsMobile() {
           onClose={() => setShowSetupWizard(false)}
           onComplete={() => {
             showSuccess('✅ החוזה עודכן בהצלחה!')
-            window.location.reload()
+            queryClient.invalidateQueries({ queryKey: ['financials-overview', projectId] })
+            queryClient.invalidateQueries({ queryKey: ['cash-flow-v2', projectId] })
+            queryClient.invalidateQueries({ queryKey: ['project', projectId] })
+            setShowSetupWizard(false)
           }}
         />
       )}

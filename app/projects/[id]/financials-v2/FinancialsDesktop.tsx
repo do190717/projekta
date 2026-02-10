@@ -1,11 +1,12 @@
 'use client'
 
 import React, { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
 import Sidebar from '../components/Sidebar'
 import { useProject } from '@/hooks/useQueries'
-import { useAllCategories } from '@/hooks/useAllCategories'
-import { useFinancialsOverview, useCashFlowV2, useContractItems } from '@/hooks/useFinancialsQueries'
+import { useProjectCategories } from '@/hooks/useProjectCategories'
+import { useFinancialsOverview, useCashFlowV2, usePurchaseOrders } from '@/hooks/useFinancialsQueries'
 import { AddTransactionModal } from './components/AddTransactionModal'
 import { AddContractItemModal } from './components/AddContractItemModal'
 import { EditContractItemModal } from './components/EditContractItemModal'
@@ -22,6 +23,7 @@ export default function FinancialsDesktop() {
   const params = useParams()
   const projectId = params.id as string
 
+  const queryClient = useQueryClient()
   const { data: project, isLoading: projectLoading } = useProject(projectId)
   const { data: overview, isLoading: overviewLoading } = useFinancialsOverview(projectId)
   const { data: transactions = [], isLoading: transactionsLoading } = useCashFlowV2(projectId)
@@ -303,9 +305,11 @@ export default function FinancialsDesktop() {
           currentContractValue={project?.contract_value}
           onClose={() => setShowSetupWizard(false)}
           onComplete={() => {
-            // Refresh data after setup
             showSuccess('✅ החוזה עודכן בהצלחה!')
-            window.location.reload()
+            queryClient.invalidateQueries({ queryKey: ['financials-overview', projectId] })
+            queryClient.invalidateQueries({ queryKey: ['cash-flow-v2', projectId] })
+            queryClient.invalidateQueries({ queryKey: ['project', projectId] })
+            setShowSetupWizard(false)
           }}
         />
       )}
@@ -363,61 +367,19 @@ function BudgetTab({
   const hasData = categories.length > 0
   const hasOverflow = overflowTotal > 0
 
-  const { categories: allCategories = [], loading: categoriesLoading } = useAllCategories(projectId)
-
-  // Get actual contract items to find the real IDs
-  const { data: contractItems = [] } = useContractItems(projectId)
-
-  console.log('🏗️ BudgetTab - categoriesLoading:', categoriesLoading)
-  console.log('🏗️ BudgetTab - allCategories:', allCategories)
-  console.log('🏗️ BudgetTab - contractItems:', contractItems)
-
-  // Wait for categories to load before merging
-  if (categoriesLoading) {
-    return <div>טוען קטגוריות...</div>
-  }
-
-  // Build complete list from contractItems
-  // This ensures custom categories with budgets appear
-  const mergedCategories = contractItems.map((item: any) => {
-    // Find the category details from allCategories (now always includes SYSTEM_CATEGORIES)
-    const categoryDetails = allCategories.find((ac: any) => ac.id === item.category_id)
-    
-    console.log(`🔍 Merging item:`, {
-      item_category_id: item.category_id,
-      categoryDetails_found: !!categoryDetails,
-      categoryDetails_name: categoryDetails?.name,
-      allCategories_count: allCategories.length
-    })
-    
-    // Find financial data from API categories
-    const apiCategory = categories.find((cat: any) => cat.category_id === item.category_id)
-    
-    // Build the merged object
-    return {
-      category_id: item.category_id,
-      category_name: categoryDetails?.name || apiCategory?.category_name || item.category_id || 'קטגוריה לא ידועה',
-      category_icon: categoryDetails?.icon || apiCategory?.category_icon || '📦',
-      contract_amount: item.contract_amount || 0,
-      actual_expenses: apiCategory?.actual_expenses || 0,
-      received_income: apiCategory?.received_income || 0,
-      expected_profit: apiCategory?.expected_profit || (item.contract_amount - (apiCategory?.actual_expenses || 0)),
-      pending_amount: apiCategory?.pending_amount || 0,
-      isCustom: categoryDetails?.isCustom || false
-    }
-  })
-
-  console.log('✅ BudgetTab - mergedCategories:', mergedCategories)
+  // Categories come pre-merged from financials_overview_v2 VIEW
+  // Each category already has: category_name, category_icon, contract_amount,
+  // actual_expenses, received_income, committed_amount
 
   // Calculate alerts using merged categories
-  const overBudgetCategories = mergedCategories.filter(cat => {
+  const overBudgetCategories = categories.filter(cat => {
     const percentageUsed = cat.contract_amount > 0 
       ? (cat.actual_expenses / cat.contract_amount) * 100 
       : 0
     return percentageUsed > 100
   })
 
-  const nearLimitCategories = mergedCategories.filter(cat => {
+  const nearLimitCategories = categories.filter(cat => {
     const percentageUsed = cat.contract_amount > 0 
       ? (cat.actual_expenses / cat.contract_amount) * 100 
       : 0
@@ -427,9 +389,6 @@ function BudgetTab({
   const hasAlerts = overBudgetCategories.length > 0 || nearLimitCategories.length > 0
 
   // Helper function to find the actual contract item
-  const findContractItem = (categoryId: string) => {
-    return contractItems.find(item => item.category_id === categoryId)
-  }
 
   return (
     <div>
@@ -461,7 +420,7 @@ function BudgetTab({
                   </div>
                   <button
                     onClick={() => {
-                      const contractItem = findContractItem(item.category_id)
+                      const contractItem = item.contract_item_id
                       if (contractItem) {
                         onEditItem(contractItem)
                       }
@@ -494,7 +453,7 @@ function BudgetTab({
                   </div>
                   <button
                     onClick={() => {
-                      const contractItem = findContractItem(item.category_id)
+                      const contractItem = item.contract_item_id
                       if (contractItem) {
                         onEditItem(contractItem)
                       }
@@ -924,7 +883,7 @@ function BudgetTab({
             )}
             
             {/* Category Cards */}
-            {mergedCategories.map((cat, index) => {
+            {categories.map((cat, index) => {
               const percentUsed = cat.contract_amount > 0 
                 ? (cat.actual_expenses / cat.contract_amount) * 100 
                 : 0
@@ -948,21 +907,25 @@ function BudgetTab({
                     </div>
                     <button
                       onClick={() => {
-                        const item = contractItems.find(item => item.category_id === cat.category_id)
-                        if (item) {
+                        if (cat.contract_item_id) {
                           onEditItem({
-                            ...item,
+                            id: cat.contract_item_id,
+                            category_id: cat.category_id,
+                            contract_amount: cat.contract_amount,
                             category_name: cat.category_name,
                             category_icon: cat.category_icon,
                             actual_expenses: cat.actual_expenses,
                             received_income: cat.received_income,
-                            expected_profit: cat.expected_profit
+                            expected_profit: cat.expected_profit,
                           })
+                        } else {
+                          setPreSelectedCategoryId(cat.category_id)
+                          onAddContractItem()
                         }
                       }}
                       className="text-xl text-[#6366F1] hover:text-[#4F46E5] cursor-pointer bg-transparent border-none transition-colors"
                     >
-                      ✏️
+                      {cat.contract_item_id ? '✏️' : '➕'}
                     </button>
                   </div>
                   
@@ -980,6 +943,12 @@ function BudgetTab({
                       <span className="text-sm text-[#64748b]">קיבל:</span>
                       <span className="text-xl font-bold text-[#10B981]">₪{formatNumber(cat.received_income)}</span>
                     </div>
+                    {cat.committed_amount > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-[#64748b]">מחויב:</span>
+                        <span className="text-xl font-bold text-[#F59E0B]">₪{formatNumber(cat.committed_amount)}</span>
+                      </div>
+                    )}
                   </div>
                   
                   {/* Progress Bar */}
@@ -1096,7 +1065,7 @@ function BudgetTab({
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {Object.entries(overflowByCategory).map(([catId, data]: [string, any]) => {
-                  const category = allCategories.find(cat => cat.id === catId)
+                  const category = categories.find((cat: any) => cat.category_id === catId)
                   return (
                     <div key={catId} style={{
                       padding: '16px',
@@ -1109,9 +1078,9 @@ function BudgetTab({
                     }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                          <span style={{ fontSize: '20px' }}>{data.category?.icon || category?.icon || '📦'}</span>
+                          <span style={{ fontSize: '20px' }}>{data.category?.icon || category?.category_icon || '📦'}</span>
                           <span style={{ fontSize: '16px', fontWeight: '600', color: '#1e293b' }}>
-                            {data.category?.name || category?.name || 'ללא שם'}
+                            {data.category?.name || category?.category_name || 'ללא שם'}
                           </span>
                         </div>
                         <div style={{ fontSize: '13px', color: '#64748b' }}>
@@ -1192,7 +1161,7 @@ function CashFlowTab({
 
   
   // Get categories for filter (including custom)
-  const { categories: allCategoriesForFilter = [] } = useAllCategories(projectId)
+  const { data: allCategoriesForFilter = [] } = useProjectCategories(projectId)
 
   // Handle sort toggle
   function handleSort(column: 'date' | 'type' | 'category' | 'amount' | 'status') {
@@ -1902,138 +1871,185 @@ function PurchaseOrdersTab({
   const [showPOList, setShowPOList] = useState(false)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | undefined>()
 
+  const { data: purchaseOrders = [], isLoading } = usePurchaseOrders(projectId)
+
+  // Stats
+  const totalPOs = purchaseOrders.length
+  const pendingDelivery = purchaseOrders.filter((po: any) => po.delivery_status !== 'delivered').length
+  const pendingPayment = purchaseOrders
+    .filter((po: any) => po.payment_status !== 'paid')
+    .reduce((sum: number, po: any) => sum + Number(po.total_amount) - Number(po.paid_amount || 0), 0)
+  const totalCommitted = purchaseOrders
+    .filter((po: any) => po.payment_status !== 'paid')
+    .reduce((sum: number, po: any) => sum + Number(po.total_amount) - Number(po.paid_amount || 0), 0)
+
+  // Find category details helper
+  const getCategoryDetails = (categoryId: string) => {
+    return categories.find(c => c.category_id === categoryId)
+  }
+
+  const getDeliveryBadge = (status: string) => {
+    switch (status) {
+      case 'delivered':
+        return <span className="px-2 py-1 bg-[#D1FAE5] text-[#065F46] rounded text-xs font-semibold">✅ סופק</span>
+      case 'partial':
+        return <span className="px-2 py-1 bg-[#FEF3C7] text-[#92400E] rounded text-xs font-semibold">📦 חלקי</span>
+      default:
+        return <span className="px-2 py-1 bg-[#F1F5F9] text-[#64748b] rounded text-xs font-semibold">⏳ ממתין</span>
+    }
+  }
+
+  const getPaymentBadge = (status: string) => {
+    switch (status) {
+      case 'paid':
+        return <span className="px-2 py-1 bg-[#D1FAE5] text-[#065F46] rounded text-xs font-semibold">✅ שולם</span>
+      case 'partial':
+        return <span className="px-2 py-1 bg-[#FEF3C7] text-[#92400E] rounded text-xs font-semibold">💳 חלקי</span>
+      default:
+        return <span className="px-2 py-1 bg-[#FEE2E2] text-[#991B1B] rounded text-xs font-semibold">⏳ לא שולם</span>
+    }
+  }
+
   return (
     <div>
       {/* Header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '24px',
-      }}>
+      <div className="flex justify-between items-center mb-6">
         <div>
-          <h2 style={{
-            fontSize: '24px',
-            fontWeight: '700',
-            color: '#1e293b',
-            margin: 0,
-          }}>
+          <h2 className="text-2xl font-bold text-[#1e293b] m-0">
             📦 הזמנות רכש
           </h2>
-          <p style={{
-            fontSize: '14px',
-            color: '#64748b',
-            margin: '8px 0 0 0',
-          }}>
+          <p className="text-sm text-[#64748b] mt-2 m-0">
             נהל הזמנות רכש, מעקב משלוחים ותשלומים
           </p>
         </div>
         <button
           onClick={() => setShowAddPO(true)}
-          style={{
-            padding: '12px 24px',
-            backgroundColor: '#6366F1',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '15px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            fontFamily: 'Heebo, sans-serif',
-          }}
+          className="px-6 py-3 bg-[#6366F1] text-white border-none rounded-lg text-[15px] font-semibold cursor-pointer font-[Heebo,sans-serif] hover:bg-[#4F46E5] transition-colors"
         >
           ➕ הזמנה חדשה
         </button>
       </div>
 
       {/* Stats Cards */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
-        gap: '16px',
-        marginBottom: '24px',
-      }}>
-        <div style={{
-          padding: '20px',
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          border: '2px solid #E5E7EB',
-        }}>
-          <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>
-            סה"כ הזמנות
-          </div>
-          <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>
-            0
-          </div>
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="p-5 bg-white rounded-xl border-2 border-[#E5E7EB]">
+          <div className="text-sm text-[#64748b] mb-2">סה"כ הזמנות</div>
+          <div className="text-3xl font-bold text-[#1e293b]">{totalPOs}</div>
         </div>
-        <div style={{
-          padding: '20px',
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          border: '2px solid #E5E7EB',
-        }}>
-          <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>
-            ממתין למשלוח
-          </div>
-          <div style={{ fontSize: '28px', fontWeight: '700', color: '#F59E0B' }}>
-            0
-          </div>
+        <div className="p-5 bg-white rounded-xl border-2 border-[#F59E0B]">
+          <div className="text-sm text-[#64748b] mb-2">ממתין למשלוח</div>
+          <div className="text-3xl font-bold text-[#F59E0B]">{pendingDelivery}</div>
         </div>
-        <div style={{
-          padding: '20px',
-          backgroundColor: 'white',
-          borderRadius: '12px',
-          border: '2px solid #E5E7EB',
-        }}>
-          <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>
-            ממתין לתשלום
-          </div>
-          <div style={{ fontSize: '28px', fontWeight: '700', color: '#EF4444' }}>
-            ₪0
-          </div>
+        <div className="p-5 bg-white rounded-xl border-2 border-[#EF4444]">
+          <div className="text-sm text-[#64748b] mb-2">ממתין לתשלום</div>
+          <div className="text-3xl font-bold text-[#EF4444]">₪{formatNumber(pendingPayment)}</div>
+        </div>
+        <div className="p-5 bg-white rounded-xl border-2 border-[#8B5CF6]">
+          <div className="text-sm text-[#64748b] mb-2">סה"כ מחויב</div>
+          <div className="text-3xl font-bold text-[#8B5CF6]">₪{formatNumber(totalCommitted)}</div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div style={{
-        padding: '32px',
-        backgroundColor: 'white',
-        borderRadius: '12px',
-        border: '2px solid #E5E7EB',
-        textAlign: 'center',
-      }}>
-        <div style={{ fontSize: '64px', marginBottom: '16px' }}>📦</div>
-        <h3 style={{
-          fontSize: '20px',
-          fontWeight: '600',
-          color: '#1e293b',
-          margin: '0 0 8px 0',
-        }}>
-          אין הזמנות רכש עדיין
-        </h3>
-        <p style={{
-          fontSize: '14px',
-          color: '#64748b',
-          margin: '0 0 24px 0',
-        }}>
-          התחל לנהל הזמנות רכש עם מעקב מלא אחר משלוחים ותשלומים
-        </p>
-        <button
-          onClick={() => setShowAddPO(true)}
-          style={{
-            padding: '12px 24px',
-            backgroundColor: '#6366F1',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '15px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            fontFamily: 'Heebo, sans-serif',
-          }}
-        >
-          ➕ הוסף הזמנה ראשונה
-        </button>
+      {/* PO Table */}
+      <div className="p-8 bg-white rounded-2xl border-2 border-[#E5E7EB]">
+        {isLoading ? (
+          <div className="text-center py-12 text-[#64748b]">טוען הזמנות...</div>
+        ) : purchaseOrders.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="text-6xl mb-4">📦</div>
+            <h3 className="text-xl font-semibold text-[#1e293b] mb-2">
+              אין הזמנות רכש עדיין
+            </h3>
+            <p className="text-sm text-[#64748b] mb-6">
+              התחל לנהל הזמנות רכש עם מעקב מלא אחר משלוחים ותשלומים
+            </p>
+            <button
+              onClick={() => setShowAddPO(true)}
+              className="px-6 py-3 bg-[#6366F1] text-white border-none rounded-lg text-[15px] font-semibold cursor-pointer font-[Heebo,sans-serif] hover:bg-[#4F46E5] transition-colors"
+            >
+              ➕ הוסף הזמנה ראשונה
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b-2 border-[#E5E7EB]">
+                  <th className="p-3 text-right font-semibold text-[#64748b]">מס׳</th>
+                  <th className="p-3 text-right font-semibold text-[#64748b]">ספק</th>
+                  <th className="p-3 text-right font-semibold text-[#64748b]">תיאור</th>
+                  <th className="p-3 text-right font-semibold text-[#64748b]">קטגוריה</th>
+                  <th className="p-3 text-right font-semibold text-[#64748b]">סכום</th>
+                  <th className="p-3 text-right font-semibold text-[#64748b]">שולם</th>
+                  <th className="p-3 text-right font-semibold text-[#64748b]">משלוח</th>
+                  <th className="p-3 text-right font-semibold text-[#64748b]">תשלום</th>
+                  <th className="p-3 text-right font-semibold text-[#64748b]">תאריך</th>
+                  <th className="p-3 text-center font-semibold text-[#64748b] w-[80px]">פעולות</th>
+                </tr>
+              </thead>
+              <tbody>
+                {purchaseOrders.map((po: any, index: number) => {
+                  const cat = getCategoryDetails(po.category_id)
+                  const remaining = Number(po.total_amount) - Number(po.paid_amount || 0)
+                  
+                  return (
+                    <tr key={po.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC] transition-colors">
+                      <td className="p-3 text-[#64748b] font-mono text-xs">
+                        {po.po_number || `#${index + 1}`}
+                      </td>
+                      <td className="p-3 font-semibold text-[#1e293b]">
+                        {po.supplier_name}
+                      </td>
+                      <td className="p-3 text-[#64748b]">
+                        {po.description || '—'}
+                      </td>
+                      <td className="p-3">
+                        {cat ? (
+                          <span className="flex items-center gap-1">
+                            <span>{cat.category_icon}</span>
+                            <span className="text-[#64748b]">{cat.category_name}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[#94a3b8]">—</span>
+                        )}
+                      </td>
+                      <td className="p-3 font-bold text-[#1e293b]">
+                        ₪{formatNumber(po.total_amount)}
+                      </td>
+                      <td className="p-3">
+                        <span className={remaining > 0 ? 'text-[#F59E0B] font-semibold' : 'text-[#10B981] font-semibold'}>
+                          ₪{formatNumber(po.paid_amount || 0)}
+                        </span>
+                        {remaining > 0 && (
+                          <div className="text-xs text-[#94a3b8]">
+                            נותר: ₪{formatNumber(remaining)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-3">{getDeliveryBadge(po.delivery_status)}</td>
+                      <td className="p-3">{getPaymentBadge(po.payment_status)}</td>
+                      <td className="p-3 text-[#64748b] text-xs">
+                        {po.order_date ? new Date(po.order_date).toLocaleDateString('he-IL') : '—'}
+                      </td>
+                      <td className="p-3 text-center">
+                        <button
+                          onClick={() => {
+                            setSelectedCategoryId(po.category_id)
+                            setShowPOList(true)
+                          }}
+                          className="p-2 bg-white border-2 border-[#E5E7EB] rounded-md text-base cursor-pointer text-[#6366F1] hover:bg-[#EEF2FF] hover:border-[#6366F1] transition-all"
+                          title="צפה"
+                        >
+                          👁️
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Modals */}
@@ -2053,7 +2069,6 @@ function PurchaseOrdersTab({
           onSuccess={() => {
             setShowAddPO(false)
             setSelectedCategoryId(undefined)
-            // TODO: Refresh PO list
           }}
         />
       )}

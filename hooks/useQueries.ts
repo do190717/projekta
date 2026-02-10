@@ -1,14 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase'
-import { useToast } from '@/app/ToastContext'
+import { showSuccess, showError } from '@/app/utils/toast'
 
-const supabase = createClient()
 
 // ============================================
 // PROJECT HOOKS
 // ============================================
 
 export function useProject(projectId: string) {
+  const supabase = createClient()
   return useQuery({
     queryKey: ['project', projectId],
     queryFn: async () => {
@@ -26,6 +26,7 @@ export function useProject(projectId: string) {
 }
 
 export function useProjects(userId: string) {
+  const supabase = createClient()
   return useQuery({
     queryKey: ['projects', userId],
     queryFn: async () => {
@@ -43,237 +44,11 @@ export function useProjects(userId: string) {
 }
 
 // ============================================
-// BUDGET HOOKS
-// ============================================
-
-export function useBudgetSettings(projectId: string) {
-  return useQuery({
-    queryKey: ['budget-settings', projectId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('project_budget_settings')
-        .select('*')
-        .eq('project_id', projectId)
-        .single()
-      
-      if (error) throw error
-      return data
-    },
-    enabled: !!projectId,
-  })
-}
-
-export function useBudgetData(projectId: string) {
-  return useQuery({
-    queryKey: ['budget', projectId],
-    queryFn: async () => {
-      // Load budget data
-      const { data: budgetViewData, error: budgetError } = await supabase
-        .from('budget_with_committed_costs')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('budgeted_amount', { ascending: false })
-      
-      if (budgetError) throw budgetError
-      if (!budgetViewData) return []
-
-      // ✅ Load all transactions in a SINGLE query (no N+1!)
-      const categoryIds = budgetViewData.map(item => item.category_id)
-      
-      const { data: allTransactions, error: transError } = await supabase
-        .from('cash_flow')
-        .select('*')
-        .eq('project_id', projectId)
-        .in('category_id', categoryIds)
-        .in('type', ['expense', 'addition_expense'])
-        .order('date', { ascending: false })
-      
-      if (transError) throw transError
-
-      // Group transactions by category_id
-      const transactionsByCategory: Record<string, any[]> = {}
-      
-      if (allTransactions) {
-        allTransactions.forEach(transaction => {
-          const catId = transaction.category_id
-          if (!transactionsByCategory[catId]) {
-            transactionsByCategory[catId] = []
-          }
-          transactionsByCategory[catId].push(transaction)
-        })
-      }
-      
-      // Attach recent transactions (max 5 per category)
-      const dataWithTransactions = budgetViewData.map(item => ({
-        ...item,
-        transactions: (transactionsByCategory[item.category_id] || []).slice(0, 5)
-      }))
-      
-      return dataWithTransactions
-    },
-    enabled: !!projectId,
-  })
-}
-
-// ============================================
-// CASH FLOW HOOKS
-// ============================================
-
-export function useCashFlow(projectId: string) {
-  return useQuery({
-    queryKey: ['cash-flow', projectId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('cash_flow')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('date', { ascending: false })
-      
-      if (error) throw error
-      return data || []
-    },
-    enabled: !!projectId,
-  })
-}
-
-export function useAddCashFlow() {
-  const queryClient = useQueryClient()
-  const toast = useToast()
-  
-  return useMutation({
-    mutationFn: async (cashFlow: any) => {
-      const { data, error } = await supabase
-        .from('cash_flow')
-        .insert(cashFlow)
-        .select()
-        .single()
-      
-      if (error) throw error
-      return data
-    },
-    onSuccess: (data) => {
-      // Invalidate relevant queries to refetch data
-      queryClient.invalidateQueries({ queryKey: ['cash-flow', data.project_id] })
-      queryClient.invalidateQueries({ queryKey: ['budget', data.project_id] })
-      toast.success('ההוצאה נוספה בהצלחה ✅')
-    },
-    onError: () => {
-      toast.error('שגיאה בהוספת ההוצאה ⚠️')
-    },
-  })
-}
-
-// ============================================
-// CATEGORIES HOOKS
-// ============================================
-
-export function useCategories(type?: 'expense' | 'income') {
-  return useQuery({
-    queryKey: ['categories', type],
-    queryFn: async () => {
-      let query = supabase
-        .from('cash_flow_categories')
-        .select('*')
-        .order('name')
-      
-      if (type) {
-        query = query.eq('type', type)
-      }
-      
-      const { data, error } = await query
-      
-      if (error) throw error
-      return data || []
-    },
-  })
-}
-
-// ============================================
-// PURCHASE ORDERS HOOKS
-// ============================================
-
-export function usePurchaseOrders(projectId: string, categoryId?: string) {
-  return useQuery({
-    queryKey: ['purchase-orders', projectId, categoryId],
-    queryFn: async () => {
-      let query = supabase
-        .from('purchase_orders')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('order_date', { ascending: false })
-      
-      if (categoryId) {
-        query = query.eq('category_id', categoryId)
-      }
-      
-      const { data, error } = await query
-      
-      if (error) throw error
-      return data || []
-    },
-    enabled: !!projectId,
-  })
-}
-
-export function useAddPurchaseOrder() {
-  const queryClient = useQueryClient()
-  const toast = useToast()
-  
-  return useMutation({
-    mutationFn: async (po: any) => {
-      const { data, error } = await supabase
-        .from('purchase_orders')
-        .insert(po)
-        .select()
-        .single()
-      
-      if (error) throw error
-      return data
-    },
-    onSuccess: (data) => {
-      // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: ['purchase-orders', data.project_id] })
-      queryClient.invalidateQueries({ queryKey: ['budget', data.project_id] })
-      toast.success('ההזמנה נוספה בהצלחה ✅')
-    },
-    onError: () => {
-      toast.error('שגיאה בהוספת ההזמנה ⚠️')
-    },
-  })
-}
-
-export function useUpdatePurchaseOrder() {
-  const queryClient = useQueryClient()
-  const toast = useToast()
-  
-  return useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: any }) => {
-      const { data, error } = await supabase
-        .from('purchase_orders')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single()
-      
-      if (error) throw error
-      return data
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['purchase-orders', data.project_id] })
-      queryClient.invalidateQueries({ queryKey: ['budget', data.project_id] })
-      toast.success('ההזמנה עודכנה בהצלחה 💚')
-    },
-    onError: () => {
-      toast.error('שגיאה בעדכון ההזמנה ⚠️')
-    },
-  })
-}
-
-// ============================================
 // DASHBOARD HOOKS
 // ============================================
 
 export function useDashboardStats(projectId: string) {
+  const supabase = createClient()
   return useQuery({
     queryKey: ['dashboard-stats', projectId],
     queryFn: async () => {
@@ -309,6 +84,7 @@ export function useDashboardStats(projectId: string) {
 }
 
 export function useRecentUpdates(projectId: string, limit = 20) {
+  const supabase = createClient()
   return useQuery({
     queryKey: ['recent-updates', projectId, limit],
     queryFn: async () => {
@@ -327,6 +103,7 @@ export function useRecentUpdates(projectId: string, limit = 20) {
 }
 
 export function useRecentFiles(projectId: string, limit = 3) {
+  const supabase = createClient()
   return useQuery({
     queryKey: ['recent-files', projectId, limit],
     queryFn: async () => {
@@ -345,6 +122,7 @@ export function useRecentFiles(projectId: string, limit = 3) {
 }
 
 export function useUpdateComments(updateIds: string[]) {
+  const supabase = createClient()
   return useQuery({
     queryKey: ['update-comments', updateIds],
     queryFn: async () => {
@@ -373,6 +151,7 @@ export function useUpdateComments(updateIds: string[]) {
 }
 
 export function useProfiles(userIds: string[]) {
+  const supabase = createClient()
   return useQuery({
     queryKey: ['profiles', userIds],
     queryFn: async () => {

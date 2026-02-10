@@ -2,10 +2,10 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { useAllCategories, Category } from '@/hooks/useAllCategories'
+import { useProjectCategories, ProjectCategory } from '@/hooks/useProjectCategories'
 import { useAddContractItem, useContractItems } from '@/hooks/useFinancialsQueries'
 import AddCustomCategoryModal from './AddCustomCategoryModal'
-import { useToast } from '@/app/ToastContext'
+import { showSuccess, showError } from '@/app/utils/toast'
 
 interface Props {
   projectId: string
@@ -15,10 +15,9 @@ interface Props {
 }
 
 export function AddContractItemModal({ projectId, onClose, onEditExisting, preSelectedCategoryId }: Props) {
-  const { categories: allCategories, addCategory } = useAllCategories(projectId)
+  const { data: allCategories = [] } = useProjectCategories(projectId)
   const { data: existingItems = [] } = useContractItems(projectId)
   const addMutation = useAddContractItem()
-  const toast = useToast()
 
   const [formData, setFormData] = useState({
     category_id: preSelectedCategoryId || '',
@@ -40,7 +39,6 @@ export function AddContractItemModal({ projectId, onClose, onEditExisting, preSe
   }
 
   const handleCategoryAdded = (category: { id: string; name: string; icon: string }) => {
-    addCategory(category)
     setFormData(prev => ({ ...prev, category_id: category.id }))
   }
 
@@ -48,7 +46,7 @@ export function AddContractItemModal({ projectId, onClose, onEditExisting, preSe
     e.preventDefault()
 
     if (!formData.category_id || !formData.contract_amount) {
-      toast.error('נא למלא את כל השדות החובה')
+      showError('נא למלא את כל השדות החובה')
       return
     }
 
@@ -83,10 +81,10 @@ export function AddContractItemModal({ projectId, onClose, onEditExisting, preSe
         }
       }
 
-      toast.success('✅ סעיף חוזה נוסף בהצלחה!')
+      showSuccess('✅ סעיף חוזה נוסף בהצלחה!')
       onClose()
     } catch (err: any) {
-      toast.error(err.message || 'שגיאה בהוספת סעיף')
+      showError(err.message || 'שגיאה בהוספת סעיף')
     }
   }
 
@@ -177,8 +175,8 @@ export function AddContractItemModal({ projectId, onClose, onEditExisting, preSe
                 {/* System Categories */}
                 <optgroup label="קטגוריות מערכת">
                   {allCategories
-                    .filter((cat: Category) => !cat.isCustom)
-                    .map((cat: Category) => (
+                    .filter((cat: ProjectCategory) => cat.is_system)
+                    .map((cat: ProjectCategory) => (
                       <option key={cat.id} value={cat.id}>
                         {cat.icon} {cat.name}
                       </option>
@@ -187,11 +185,11 @@ export function AddContractItemModal({ projectId, onClose, onEditExisting, preSe
                 </optgroup>
 
                 {/* Custom Categories */}
-                {allCategories.some((cat: Category) => cat.isCustom) && (
+                {allCategories.some((cat: ProjectCategory) => !cat.is_system) && (
                   <optgroup label="קטגוריות מותאמות אישית">
                     {allCategories
-                      .filter((cat: Category) => cat.isCustom)
-                      .map((cat: Category) => (
+                      .filter((cat: ProjectCategory) => !cat.is_system)
+                      .map((cat: ProjectCategory) => (
                         <option key={cat.id} value={cat.id}>
                           {cat.icon} {cat.name}
                         </option>
@@ -377,7 +375,7 @@ export function AddContractItemModal({ projectId, onClose, onEditExisting, preSe
               }}>
                 כבר קיים סעיף חוזה עבור{' '}
                 <strong>
-                  {allCategories.find((c: Category) => c.id === formData.category_id)?.name || 'קטגוריה זו'}
+                  {allCategories.find((c: ProjectCategory) => c.id === formData.category_id)?.name || 'קטגוריה זו'}
                 </strong>
               </p>
               

@@ -47,20 +47,12 @@ export default function Sidebar({ projectName }: SidebarProps) {
       enabled: true,
     },
     {
-      id: 'cash-flow',
+      id: 'financials',
       icon: '💰',
-      label: 'תזרים מזומנים',
-      href: `/projects/${projectId}/cash-flow`,
+      label: 'פיננסים',
+      href: `/projects/${projectId}/financials-v2`,
       enabled: true,
-      highlight: true, // NEW!
-    },
-    {
-      id: 'budget',          
-      icon: '📊',            
-      label: 'תקציב',        
-      href: `/projects/${projectId}/budget`,  
-      enabled: true,         
-      highlight: true,       
+      highlight: true,
     },
     {
       id: 'workforce',

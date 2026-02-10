@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { showSuccess, showError } from '@/app/utils/toast'
 import { createClient } from '@/lib/supabase'
 import type { PurchaseOrder, PaymentStatus } from '@/types/budget'
 import { 
@@ -29,6 +31,7 @@ export default function POListModal({
   onUpdate,
 }: POListModalProps) {
   const supabase = createClient()
+  const queryClient = useQueryClient()
   const [pos, setPOs] = useState<PurchaseOrder[]>([])
   const [filteredPOs, setFilteredPOs] = useState<PurchaseOrder[]>([])
   const [loading, setLoading] = useState(true)
@@ -91,13 +94,19 @@ export default function POListModal({
       
       // Remove from local state
       setPOs(pos.filter(po => po.id !== poId))
+      showSuccess('✅ ההזמנה נמחקה')
+      
+      // Invalidate React Query caches
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['financials-overview', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['cash-flow-v2', projectId] })
       
       // Notify parent to refresh
       if (onUpdate) onUpdate()
       
     } catch (error) {
       console.error('Error deleting PO:', error)
-      alert('שגיאה במחיקת ההזמנה')
+      showError('שגיאה במחיקת ההזמנה')
     } finally {
       setProcessingId(null)
     }
@@ -116,7 +125,7 @@ export default function POListModal({
       
       // Step 1: Create cash flow entry
       const { error: cashFlowError } = await supabase
-        .from('cash_flow')
+        .from('cash_flow_v2')
         .insert({
           project_id: po.project_id,
           category_id: po.category_id,
@@ -144,11 +153,15 @@ export default function POListModal({
       
       // Reload
       await loadPOs()
+      showSuccess('✅ ההזמנה סומנה כשולמה')
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['financials-overview', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['cash-flow-v2', projectId] })
       if (onUpdate) onUpdate()
       
     } catch (error) {
       console.error('Error marking as paid:', error)
-      alert('שגיאה בסימון ההזמנה כשולמה')
+      showError('שגיאה בסימון ההזמנה כשולמה')
     } finally {
       setProcessingId(null)
     }
@@ -165,7 +178,7 @@ export default function POListModal({
     try {
       // Step 1: Find and delete the cash flow entry created by this PO
       const { error: deleteError } = await supabase
-        .from('cash_flow')
+        .from('cash_flow_v2')
         .delete()
         .eq('project_id', po.project_id)
         .eq('category_id', po.category_id)
@@ -191,11 +204,15 @@ export default function POListModal({
       
       // Reload
       await loadPOs()
+      showSuccess('↩️ סטטוס התשלום בוטל')
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['financials-overview', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['cash-flow-v2', projectId] })
       if (onUpdate) onUpdate()
       
     } catch (error) {
       console.error('Error undoing paid status:', error)
-      alert('שגיאה בביטול סטטוס התשלום')
+      showError('שגיאה בביטול סטטוס התשלום')
     } finally {
       setProcessingId(null)
     }
@@ -218,11 +235,14 @@ export default function POListModal({
       
       // Reload
       await loadPOs()
+      showSuccess('✅ ההזמנה סומנה כסופקה')
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['financials-overview', projectId] })
       if (onUpdate) onUpdate()
       
     } catch (error) {
       console.error('Error updating delivery status:', error)
-      alert('שגיאה בעדכון סטטוס המשלוח')
+      showError('שגיאה בעדכון סטטוס המשלוח')
     } finally {
       setProcessingId(null)
     }
@@ -245,11 +265,14 @@ export default function POListModal({
       
       // Reload
       await loadPOs()
+      showSuccess('↩️ סטטוס המשלוח בוטל')
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['financials-overview', projectId] })
       if (onUpdate) onUpdate()
       
     } catch (error) {
       console.error('Error undoing delivery status:', error)
-      alert('שגיאה בביטול סטטוס המשלוח')
+      showError('שגיאה בביטול סטטוס המשלוח')
     } finally {
       setProcessingId(null)
     }

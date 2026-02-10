@@ -39,12 +39,16 @@ async function sendWhatsAppMessage(to, text) {
 }
 
 export default async function handler(req, res) {
+    console.log('=== WA OUTBOUND DEBUG ===')
+    console.log('Body:', JSON.stringify(req.body, null, 2))
+    console.log('Extracted message_id:', message_id)
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
   try {
-    const { message_id } = req.body
+    // Supabase sends webhook in this format: { type: "INSERT", table: "v2_chat_messages", record: {...} }
+    const message_id = req.body?.record?.id || req.body?.message_id
     
     if (!message_id) {
       return res.status(400).json({ error: 'message_id required' })

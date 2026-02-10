@@ -39,18 +39,27 @@ async function sendWhatsAppMessage(to, text) {
 }
 
 export default async function handler(req, res) {
-    console.log('=== WA OUTBOUND DEBUG ===')
-    console.log('Body:', JSON.stringify(req.body, null, 2))
-    console.log('Extracted message_id:', message_id)
+  console.log('=== WA OUTBOUND DEBUG ===')
+  console.log('Method:', req.method)
+  console.log('Body:', JSON.stringify(req.body, null, 2))
+  
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' })
   }
 
   try {
-    // Supabase sends webhook in this format: { type: "INSERT", table: "v2_chat_messages", record: {...} }
-    const message_id = req.body?.record?.id || req.body?.message_id
+    // Handle Supabase webhook format: { type: "INSERT", table: "v2_chat_messages", record: {...} }
+    let message_id
+    if (req.body?.record?.id) {
+      message_id = req.body.record.id
+    } else if (req.body?.message_id) {
+      message_id = req.body.message_id
+    }
+    
+    console.log('Extracted message_id:', message_id)
     
     if (!message_id) {
+      console.log('No message_id found in payload')
       return res.status(400).json({ error: 'message_id required' })
     }
 
@@ -63,16 +72,18 @@ export default async function handler(req, res) {
     )
 
     // Get message details
-    const { data: message } = await supabase
+    const { data: message, error: messageError } = await supabase
       .from('v2_chat_messages')
       .select('id, project_id, user_id, content, message_type, metadata')
       .eq('id', message_id)
       .single()
 
-    if (!message) {
-      console.log('Message not found:', message_id)
+    if (messageError || !message) {
+      console.log('Message not found:', message_id, messageError)
       return res.status(404).json({ error: 'message_not_found' })
     }
+
+    console.log('Message found:', message.content)
 
     // Skip if from WhatsApp (avoid loop)
     if (message.metadata?.source === 'whatsapp') {
@@ -95,6 +106,8 @@ export default async function handler(req, res) {
       p_project_id: message.project_id,
       p_exclude_user_id: message.user_id,
     })
+
+    console.log('Recipients found:', recipients?.length || 0)
 
     if (!recipients || recipients.length === 0) {
       console.log('No WA recipients for project:', message.project_id)

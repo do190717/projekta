@@ -12,6 +12,9 @@ const ROLES: { [key: string]: { name: string; icon: string } } = {
 
 export default function InvitePage() {
   const params = useParams()
+    if (!params?.token) {
+    return <div>Invalid invite token</div>
+  }
   const token = params.token as string
 
   const [loading, setLoading] = useState(true)

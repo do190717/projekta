@@ -32,6 +32,17 @@ function parseWebhookPayload(body) {
 }
 
 export default async function handler(req, res) {
+  // שם את זה בהתחלה של הפונקציה
+  console.log('=== WEBHOOK DEBUG START ===')
+  console.log('Timestamp:', new Date().toISOString())
+  console.log('Method:', req.method)
+  console.log('URL:', req.url)
+  console.log('Query params:', JSON.stringify(req.query))
+  console.log('Headers:', JSON.stringify({
+    'user-agent': req.headers['user-agent'],
+    'content-type': req.headers['content-type'],
+    'x-forwarded-for': req.headers['x-forwarded-for'],
+  }))
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -47,13 +58,12 @@ export default async function handler(req, res) {
   }
 
   // Webhook verification (GET)
-  if (req.method === 'GET') {
+ if (req.method === 'GET') {
     const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query
-    
-    console.log('Verification - Mode:', mode, 'Token:', token, 'Challenge:', challenge)
+    console.log('GET REQUEST - Mode:', mode, 'Token:', token, 'Challenge:', challenge)
     
     const verifyToken = process.env.WA_VERIFY_TOKEN || 'hello123'
-    console.log('Expected token:', verifyToken)
+    console.log('Expected verify token:', verifyToken)
     
     if (mode === 'subscribe' && token === verifyToken) {
       console.log('✅ Verification SUCCESS')

@@ -14,6 +14,7 @@ import { useTypingIndicator } from '@/lib/updates-v2/useTypingIndicator'
 import type { ChatMessageRow, MiniProfile } from '@/lib/updates-v2/types'
 import { TaskBoardPanel, DecisionTimelinePanel, SearchPanel } from './ChatPanels'
 import { createClient } from '@/lib/supabase'
+import Link from 'next/link'
 
 // ====== DESIGN TOKENS ======
 
@@ -808,7 +809,24 @@ export default function SmartChat({ projectId, projectName, currentUserId, isMob
                   fontSize: 12, color: '#9CA3AF', fontStyle: 'italic',
                   backgroundColor: 'white', borderRadius: 8, padding: '10px 14px',
                 }}>
-                  אין חברי פרויקט עם WhatsApp מאומת. בקש מהם לחבר WhatsApp בדף הפרופיל.
+                  <p style={{ margin: '0 0 8px 0' }}>אין חברי פרויקט עם WhatsApp מחובר</p>
+                  <p style={{ margin: '0 0 10px 0', fontSize: '11px' }}>כדי לקבל הודעות בWhatsApp, חברי הפרויקט צריכים לחבר את המספר שלהם</p>
+                  <Link 
+                    href="/profile" 
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      padding: '6px 12px',
+                      backgroundColor: '#16a34a',
+                      color: 'white',
+                      borderRadius: '6px',
+                      textDecoration: 'none',
+                      fontSize: '11px',
+                      transition: 'background-color 0.2s'
+                    }}
+                  >
+                    📱 התחבר לWhatsApp בפרופיל
+                  </Link>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

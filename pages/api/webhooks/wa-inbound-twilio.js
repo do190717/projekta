@@ -66,35 +66,31 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing phone number or message body' });
     }
 
-    // Find user by phone number in v2_wa_user_phones
+    // Find user phone number
     const { data: userPhone, error: userPhoneError } = await supabase
       .from('v2_wa_user_phones')
-      .select(`
-        user_id,
-        phone_number,
-        profiles!inner(id, full_name),
-        project_members!inner(project_id, projects!inner(id, name))
-      `)
+      .select('*')
       .eq('phone_number', phoneNumber)
-      .limit(1);
+      .single();
 
-    if (userPhoneError) {
-      console.error('Error finding user:', userPhoneError);
-      return res.status(500).json({ error: 'Database error', details: userPhoneError });
-    }
-
-    if (!userPhone || userPhone.length === 0) {
+    if (userPhoneError || !userPhone) {
       console.log('No user found for phone:', phoneNumber);
       return res.status(200).send('OK - No user found');
     }
 
-    const user = userPhone[0];
-    const projectId = user.project_members[0]?.project_id;
+    // Find user's projects
+    const { data: projectMember, error: projectError } = await supabase
+      .from('project_members')
+      .select('project_id')
+      .eq('user_id', userPhone.user_id)
+      .single();
 
-    if (!projectId) {
+    if (projectError || !projectMember) {
       console.log('No project found for user:', phoneNumber);
       return res.status(200).send('OK - No project');
     }
+
+    const projectId = projectMember.project_id;
 
     // Save message to v2_chat_messages
     const { data: savedMessage, error: saveError } = await supabase
@@ -102,7 +98,7 @@ export default async function handler(req, res) {
       .insert({
         id: crypto.randomUUID(),
         project_id: projectId,
-        user_id: user.user_id,
+        user_id: userPhone.user_id,
         content: body,
         created_at: new Date().toISOString(),
         metadata: {

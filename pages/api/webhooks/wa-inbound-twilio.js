@@ -1,6 +1,7 @@
 // Twilio WhatsApp Webhook Handler - Inbound Messages
 const twilio = require('twilio');
 const { createClient } = require('@supabase/supabase-js');
+const crypto = require('crypto');
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -65,22 +66,63 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing phone number or message body' });
     }
 
-    // Call Supabase RPC to process the inbound message
-    const { data, error } = await supabase.rpc('v2_wa_process_inbound', {
-      phone_number: phoneNumber,
-      message_content: body,
-      message_id: messageSid,
-      sender_name: profileName,
-      media_url: mediaUrl,
-      media_type: mediaType
-    });
+    // Find user by phone number in v2_wa_user_phones
+    const { data: userPhone, error: userPhoneError } = await supabase
+      .from('v2_wa_user_phones')
+      .select(`
+        user_id,
+        phone_number,
+        profiles!inner(id, full_name),
+        project_members!inner(project_id, projects!inner(id, name))
+      `)
+      .eq('phone_number', phoneNumber)
+      .limit(1);
 
-    if (error) {
-      console.error('Supabase RPC error:', error);
-      return res.status(500).json({ error: 'Database error', details: error });
+    if (userPhoneError) {
+      console.error('Error finding user:', userPhoneError);
+      return res.status(500).json({ error: 'Database error', details: userPhoneError });
     }
 
-    console.log('Message processed successfully:', data);
+    if (!userPhone || userPhone.length === 0) {
+      console.log('No user found for phone:', phoneNumber);
+      return res.status(200).send('OK - No user found');
+    }
+
+    const user = userPhone[0];
+    const projectId = user.project_members[0]?.project_id;
+
+    if (!projectId) {
+      console.log('No project found for user:', phoneNumber);
+      return res.status(200).send('OK - No project');
+    }
+
+    // Save message to v2_chat_messages
+    const { data: savedMessage, error: saveError } = await supabase
+      .from('v2_chat_messages')
+      .insert({
+        id: crypto.randomUUID(),
+        project_id: projectId,
+        user_id: user.user_id,
+        content: body,
+        created_at: new Date().toISOString(),
+        metadata: {
+          source: 'whatsapp',
+          twilio_message_id: messageSid,
+          sender_name: profileName,
+          phone_number: phoneNumber,
+          media_url: mediaUrl,
+          media_type: mediaType
+        }
+      })
+      .select()
+      .single();
+
+    if (saveError) {
+      console.error('Error saving message:', saveError);
+      return res.status(500).json({ error: 'Save error', details: saveError });
+    }
+
+    console.log('Message saved successfully:', savedMessage.id);
     
     // Respond to Twilio (empty response = success)
     return res.status(200).send('OK');

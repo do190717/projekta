@@ -2,13 +2,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase'
 import { showSuccess, showError } from '@/app/utils/toast'
 
+const supabase = createClient()
 
 // ============================================
 // PROJECT HOOKS
 // ============================================
 
 export function useProject(projectId: string) {
-  const supabase = createClient()
   return useQuery({
     queryKey: ['project', projectId],
     queryFn: async () => {
@@ -26,18 +26,41 @@ export function useProject(projectId: string) {
 }
 
 export function useProjects(userId: string) {
-  const supabase = createClient()
   return useQuery({
     queryKey: ['projects', userId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // 1. פרויקטים שאני בעלים
+      const { data: owned, error } = await supabase
         .from('projects')
         .select('*')
         .eq('owner_id', userId)
         .order('created_at', { ascending: false })
-      
+
       if (error) throw error
-      return data || []
+
+      const ownedProjects = owned || []
+
+      // 2. פרויקטים שאני חבר בהם
+      const { data: memberOf } = await supabase
+        .from('project_members')
+        .select('project_id')
+        .eq('user_id', userId)
+
+      const memberProjectIds = (memberOf || [])
+        .map(m => m.project_id)
+        .filter(id => !ownedProjects.some((p: any) => p.id === id))
+
+      let memberProjects: any[] = []
+      if (memberProjectIds.length > 0) {
+        const { data } = await supabase
+          .from('projects')
+          .select('*')
+          .in('id', memberProjectIds)
+          .order('created_at', { ascending: false })
+        memberProjects = data || []
+      }
+
+      return [...ownedProjects, ...memberProjects]
     },
     enabled: !!userId,
   })
@@ -48,7 +71,6 @@ export function useProjects(userId: string) {
 // ============================================
 
 export function useDashboardStats(projectId: string) {
-  const supabase = createClient()
   return useQuery({
     queryKey: ['dashboard-stats', projectId],
     queryFn: async () => {
@@ -84,7 +106,6 @@ export function useDashboardStats(projectId: string) {
 }
 
 export function useRecentUpdates(projectId: string, limit = 20) {
-  const supabase = createClient()
   return useQuery({
     queryKey: ['recent-updates', projectId, limit],
     queryFn: async () => {
@@ -103,7 +124,6 @@ export function useRecentUpdates(projectId: string, limit = 20) {
 }
 
 export function useRecentFiles(projectId: string, limit = 3) {
-  const supabase = createClient()
   return useQuery({
     queryKey: ['recent-files', projectId, limit],
     queryFn: async () => {
@@ -122,7 +142,6 @@ export function useRecentFiles(projectId: string, limit = 3) {
 }
 
 export function useUpdateComments(updateIds: string[]) {
-  const supabase = createClient()
   return useQuery({
     queryKey: ['update-comments', updateIds],
     queryFn: async () => {
@@ -151,7 +170,6 @@ export function useUpdateComments(updateIds: string[]) {
 }
 
 export function useProfiles(userIds: string[]) {
-  const supabase = createClient()
   return useQuery({
     queryKey: ['profiles', userIds],
     queryFn: async () => {

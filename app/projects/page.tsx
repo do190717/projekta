@@ -27,13 +27,36 @@ export default function ProjectsPage() {
   }, [])
 
   const fetchProjects = async (userId: string) => {
-    const { data } = await supabase
+    // 1. פרויקטים שאני בעלים
+    const { data: owned } = await supabase
       .from('projects')
       .select('*')
       .eq('owner_id', userId)
       .order('created_at', { ascending: false })
-    
-    setProjects(data || [])
+
+    const ownedProjects = owned || []
+
+    // 2. פרויקטים שאני חבר בהם
+    const { data: memberOf } = await supabase
+      .from('project_members')
+      .select('project_id')
+      .eq('user_id', userId)
+
+    const memberProjectIds = (memberOf || [])
+      .map(m => m.project_id)
+      .filter(id => !ownedProjects.some((p: any) => p.id === id))
+
+    let memberProjects: any[] = []
+    if (memberProjectIds.length > 0) {
+      const { data } = await supabase
+        .from('projects')
+        .select('*')
+        .in('id', memberProjectIds)
+        .order('created_at', { ascending: false })
+      memberProjects = data || []
+    }
+
+    setProjects([...ownedProjects, ...memberProjects])
     setLoading(false)
   }
 
@@ -271,8 +294,8 @@ export default function ProjectsPage() {
                 {project.name}
               </a>
               
-              {/* Delete Button - Small Box on Side */}
-              <button
+              {/* Delete Button - Only for owner */}
+              {project.owner_id === user?.id && <button
                 onClick={() => deleteProject(project.id)}
                 style={{
                   padding: '8px 12px',
@@ -303,6 +326,7 @@ export default function ProjectsPage() {
               >
                 🗑️ מחק
               </button>
+              }
             </div>
           ))}
         </div>

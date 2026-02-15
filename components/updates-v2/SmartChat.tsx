@@ -190,6 +190,8 @@ export default function SmartChat({ projectId, projectName, currentUserId, isMob
   const [waEnabled, setWaEnabled] = useState(false)
   const [waLoading, setWaLoading] = useState(true)
   const [waRecipients, setWaRecipients] = useState<{ user_id: string; phone_number: string; full_name: string }[]>([])
+  const [showUserDetails, setShowUserDetails] = useState<any>(null)
+  
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -798,54 +800,125 @@ export default function SmartChat({ projectId, projectName, currentUserId, isMob
             </button>
           </div>
 
-          {/* Recipients list */}
+          {/* Recipients list - FIXED UX VERSION */}
           {waEnabled && (
             <div style={{ marginTop: 10 }}>
               <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 6, fontWeight: 500 }}>
-                חברי פרויקט עם WhatsApp מחובר:
+                חברי פרויקט עם WhatsApp מחובר ({waRecipients.length}):
               </div>
-              {waRecipients.length === 0 ? (
-                <div style={{
-                  fontSize: 12, color: '#9CA3AF', fontStyle: 'italic',
-                  backgroundColor: 'white', borderRadius: 8, padding: '10px 14px',
-                }}>
-                  <p style={{ margin: '0 0 8px 0' }}>אין חברי פרויקט עם WhatsApp מחובר</p>
-                  <p style={{ margin: '0 0 10px 0', fontSize: '11px' }}>כדי לקבל הודעות בWhatsApp, חברי הפרויקט צריכים לחבר את המספר שלהם</p>
-                  <Link 
-                    href="/profile" 
+              
+              {/* Recipients Display + Profile Button - ALWAYS SHOW */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                
+                {/* Existing Recipients */}
+                {waRecipients.map(r => (
+                  <button
+                    key={r.user_id}
+                    onClick={() => setShowUserDetails(r)}
                     style={{
-                      display: 'inline-flex',
+                      display: 'flex',
                       alignItems: 'center',
+                      gap: 6,
+                      backgroundColor: 'white',
+                      borderRadius: 20,
                       padding: '6px 12px',
-                      backgroundColor: '#16a34a',
-                      color: 'white',
-                      borderRadius: '6px',
-                      textDecoration: 'none',
-                      fontSize: '11px',
-                      transition: 'background-color 0.2s'
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: '#166534',
+                      border: '1px solid rgba(37,211,102,.2)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      position: 'relative'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#f0fdf4'
+                      e.currentTarget.style.transform = 'scale(1.02)'
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'white'
+                      e.currentTarget.style.transform = 'scale(1)'
                     }}
                   >
-                    📱 התחבר לWhatsApp בפרופיל
-                  </Link>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {waRecipients.map(r => (
-                    <span key={r.user_id} style={{
-                      backgroundColor: 'white', borderRadius: 20,
-                      padding: '5px 12px', fontSize: 12, fontWeight: 500,
-                      color: '#166534', border: '1px solid rgba(37,211,102,.2)',
-                      display: 'flex', alignItems: 'center', gap: 4,
-                    }}>
-                      <span style={{
-                        width: 6, height: 6, borderRadius: '50%',
-                        backgroundColor: '#25D366',
-                      }} />
+                    {/* Online Status */}
+                    <span style={{
+                      width: 6, height: 6, borderRadius: '50%',
+                      backgroundColor: '#25D366', flexShrink: 0
+                    }} />
+                    
+                    {/* Display NAME not phone number! */}
+                    <span style={{ whiteSpace: 'nowrap' }}>
                       {r.full_name || r.phone_number}
                     </span>
-                  ))}
-                </div>
-              )}
+                    
+                    {/* "Me" indicator */}
+                    {r.user_id === currentUserId && (
+                      <span style={{
+                        fontSize: 9,
+                        backgroundColor: '#3b82f6',
+                        color: 'white',
+                        borderRadius: 6,
+                        padding: '1px 4px',
+                        fontWeight: 600
+                      }}>
+                        אני
+                      </span>
+                    )}
+                  </button>
+                ))}
+
+                {/* ALWAYS VISIBLE - Profile Button */}
+                <Link 
+                  href="/profile" 
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    backgroundColor: waRecipients.length === 0 ? '#16a34a' : '#f8fafc',
+                    color: waRecipients.length === 0 ? 'white' : '#64748b',
+                    borderRadius: '20px',
+                    textDecoration: 'none',
+                    fontSize: '11px',
+                    border: waRecipients.length === 0 ? 'none' : '1px dashed #d1d5db',
+                    transition: 'all 0.2s ease',
+                    fontWeight: '500',
+                    flexShrink: 0
+                  }}
+                  onMouseEnter={(e) => {
+                    if (waRecipients.length === 0) {
+                      e.currentTarget.style.backgroundColor = '#15803d'
+                    } else {
+                      e.currentTarget.style.backgroundColor = '#e5e7eb'
+                      e.currentTarget.style.borderColor = '#9ca3af'
+                      e.currentTarget.style.color = '#4b5563'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = waRecipients.length === 0 ? '#16a34a' : '#f8fafc'
+                    if (waRecipients.length > 0) {
+                      e.currentTarget.style.borderColor = '#d1d5db'
+                      e.currentTarget.style.color = '#64748b'
+                    }
+                  }}
+                >
+                  {waRecipients.length === 0 ? '📱 התחבר לWhatsApp בפרופיל' : '➕ עדכן פרופיל'}
+                </Link>
+
+                {/* Help text only when empty */}
+                {waRecipients.length === 0 && (
+                  <div style={{
+                    fontSize: '11px',
+                    color: '#94a3b8',
+                    fontStyle: 'italic',
+                    padding: '4px 8px',
+                    width: '100%',
+                    textAlign: 'center',
+                    marginTop: 4
+                  }}>
+                    💡 לחץ על הכפתור למעלה כדי לחבר את המספר שלך
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1746,6 +1819,186 @@ export default function SmartChat({ projectId, projectName, currentUserId, isMob
           }}
           onClose={() => setTaskFromMsg(null)}
         />
+      )}
+
+      {/* ============ USER DETAILS MODAL ============ */}
+      {showUserDetails && (
+        <div 
+          onClick={() => setShowUserDetails(null)}
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '20px'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '16px',
+              padding: '24px',
+              width: '100%',
+              maxWidth: '400px',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+              direction: 'rtl',
+              fontFamily: "'Heebo', sans-serif"
+            }}
+          >
+            {/* Header */}
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              marginBottom: '20px' 
+            }}>
+              <h3 style={{ 
+                margin: 0, 
+                fontSize: '18px', 
+                fontWeight: '600',
+                color: '#1e293b'
+              }}>
+                👤 פרטי משתתף
+              </h3>
+              <button 
+                onClick={() => setShowUserDetails(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '24px',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* User Info */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
+              {/* Avatar & Name */}
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '12px',
+                padding: '16px',
+                backgroundColor: '#f8fafc',
+                borderRadius: '12px'
+              }}>
+                <div style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '50%',
+                  backgroundColor: '#25D366',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '24px',
+                  color: 'white',
+                  fontWeight: 'bold'
+                }}>
+                  {showUserDetails.full_name ? showUserDetails.full_name[0] : '?'}
+                </div>
+                <div>
+                  <div style={{ 
+                    fontSize: '16px', 
+                    fontWeight: '600', 
+                    color: '#1e293b',
+                    marginBottom: '2px' 
+                  }}>
+                    {showUserDetails.full_name || 'משתמש'}
+                  </div>
+                  <div style={{ 
+                    fontSize: '12px', 
+                    color: '#25D366',
+                    fontWeight: '500'
+                  }}>
+                    🟢 זמין ב-WhatsApp
+                  </div>
+                </div>
+              </div>
+
+              {/* Phone */}
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '12px',
+                padding: '12px',
+                backgroundColor: '#f1f5f9',
+                borderRadius: '8px'
+              }}>
+                <span style={{ fontSize: '16px' }}>📱</span>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '2px' }}>
+                    מספר WhatsApp
+                  </div>
+                  <div style={{ 
+                    fontSize: '14px', 
+                    fontWeight: '500',
+                    color: '#1e293b',
+                    direction: 'ltr',
+                    textAlign: 'left',
+                    fontFamily: 'monospace'
+                  }}>
+                    {showUserDetails.phone_number}
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ 
+                display: 'flex', 
+                gap: '8px', 
+                marginTop: '8px' 
+              }}>
+                <a 
+                  href={`https://wa.me/${showUserDetails.phone_number.replace(/[^\d]/g, '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    backgroundColor: '#25D366',
+                    color: 'white',
+                    textDecoration: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    textAlign: 'center',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  💬 פתח WhatsApp
+                </a>
+                <button 
+                  onClick={() => setShowUserDetails(null)}
+                  style={{
+                    padding: '12px 16px',
+                    backgroundColor: '#f8fafc',
+                    color: '#64748b',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  סגור
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ============ SIDE PANELS ============ */}
